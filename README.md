@@ -9,3 +9,6 @@ It looks both at the profit per item and the daily sales of a given item.
 2) Put the average sale price, and sale/day data into a database using SQLite
 3) Using the recipe database, calculate the cost to craft and average profit
 4) Output table of the top 50 most proftable items to craft (w/ optional criteria of minimum sales/day)
+
+## Example Output
+![alt text](https://github.com/CameronDeweerd/FFXIV-Market-Calculator/blob/master/FFXIV%20Market.JPG?raw=true)
