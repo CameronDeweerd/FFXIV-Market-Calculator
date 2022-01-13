@@ -46,8 +46,8 @@ class FFXIV_DB_creation():
         self.csv_to_DB(marketable_items, 'item')
         print('item table created')
 
-        self.csv_to_DB(marketable_recipes, 'recipe')
-        print('recipe table created')
+        # self.csv_to_DB(marketable_recipes, 'recipe')
+        # print('recipe table created')
 
         # TODO add the additional columns like: ave_cost,regSaleVelocity,ave_NQ_cost,nqSaleVelocity,ave_HQ_cost,hqSaleVelocity'
 
@@ -78,11 +78,11 @@ class FFXIV_DB_creation():
         :return: List of item IDs that can be sold on the market
         '''
 
-        marketable_items = [None, 'itemNum,name', 'INTEGER,TEXT']
+        marketable_items = ['?,?', ('itemNum', 'name'), ('INTEGER', 'TEXT')]
         for line in items[3:]:
             splitLine = line.split(',')
             if splitLine[0] in marketable_ids:
-                marketable_items.append(f'{splitLine[0]},NULL')
+                marketable_items.append((splitLine[0], 'NULL'))
         return marketable_items
 
     def filter_marketable_recipes(self, recipes, marketable_ids):
@@ -92,34 +92,39 @@ class FFXIV_DB_creation():
         marketable_recipes[
             2] = 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER'
         for line in recipes[3:]:
-            crafted_item_id = line.split(',')[4]
+            split_line = line.split(',')
+            crafted_item_id = split_line[4]
             if crafted_item_id in marketable_ids:
-                marketable_recipes.append(line)
+                marketable_recipes.append(split_line)
         return marketable_recipes
 
     # function used to convert original files into the DB
     def csv_to_DB(self, csv_data, table_name):
         DB = self.db
 
-        dataTypes = csv_data[2].split(',')
-        columnNames = csv_data[1].split(',')
+        dataTypes = csv_data[2]
+        columnNames = csv_data[1]
         for column, name in enumerate(columnNames):
             if name == "":
                 columnNames[column] = f'unnamedColumn{column}'
 
+        num_columns = len(columnNames)
+        question_marks = ""
         # create a new table
         creation_command = f"CREATE TABLE IF NOT EXISTS {table_name} ("
-        for i in range(len(columnNames)):
+        for i in range(num_columns):
             creation_command = creation_command + f"{columnNames[i]} {dataTypes[i]}, "
+            question_marks = question_marks + '?,'
         creation_command = creation_command[:-2] + ")"  # remove the final comma and close the command
+        question_marks = question_marks[:-1]
         DB.execute_query(creation_command)
 
         # add all values
-        for index, dataRow in enumerate(csv_data[3:]):
-            insert_command = f"INSERT INTO {table_name} {*columnNames,} VALUES ({dataRow})"
-            DB.execute_query(insert_command)
-            if index % 100 == 0:
-                print(f'{index} out of {len(csv_data) - 3} added')
+        # for index, dataRow in enumerate(csv_data[3:]):
+        insert_command = f"INSERT INTO {table_name} VALUES ({question_marks})"
+        DB.execute_query_many(insert_command, csv_data[3:])
+        # if index % 100 == 0:
+        #     print(f'{index} out of {len(csv_data) - 3} added')
         return
 
 # # function used to convert original files into the DB
