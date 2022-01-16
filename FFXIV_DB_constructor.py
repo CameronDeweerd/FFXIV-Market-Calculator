@@ -1,8 +1,8 @@
 from SQLhelpers import SQL_manager
 import requests
 import sys
-import csv
-import urllib
+import os
+import pathlib
 
 
 class FFXIV_DB_creation():
@@ -18,6 +18,8 @@ class FFXIV_DB_creation():
 
         :param db_name: str The name that the database should be called
         '''
+        if os.path.exists(pathlib.Path(__file__).parent / db_name):
+            raise ValueError("Database with that name already exists")
 
         self.db = SQL_manager(db_name)
 
@@ -49,6 +51,22 @@ class FFXIV_DB_creation():
         self.csv_to_DB(marketable_recipes, 'recipe')
         print('recipe table created')
 
+        for i in range(10):
+            self.db.execute_query(f"ALTER TABLE recipe ADD ingredientCost{i} INTEGER DEFAULT 0;")
+
+        self.db.execute_query(
+            "ALTER TABLE recipe ADD costToCraft GENERATED ALWAYS AS ("
+            "AmountIngredient0 * ingredientCost0 + AmountIngredient1 * ingredientCost1 + "
+            "AmountIngredient2 * ingredientCost2 + AmountIngredient3 * ingredientCost3 + "
+            "AmountIngredient4 * ingredientCost4 + AmountIngredient5 * ingredientCost5 + "
+            "AmountIngredient6 * ingredientCost6 + AmountIngredient7 * ingredientCost7 + "
+            "AmountIngredient8 * ingredientCost8 + AmountIngredient9 * ingredientCost9)")
+
+        self.db.execute_query(f"ALTER TABLE item ADD costToCraft INTEGER DEFAULT 0;")
+        # self.db.execute_query(
+        #     f"ALTER TABLE item ADD costToCraft GENERATED ALWAYS AS (SELECT costToCraft FROM recipe WHERE ItemResult = itemNum LIMIT 1);")
+        self.db.execute_query(f"ALTER TABLE item ADD craftProfit GENERATED ALWAYS AS (ave_cost - costToCraft);")
+
         # TODO add the additional columns like: ave_cost,regSaleVelocity,ave_NQ_cost,nqSaleVelocity,ave_HQ_cost,hqSaleVelocity'
 
     def get_data_from_url(self, url):
@@ -72,19 +90,19 @@ class FFXIV_DB_creation():
         return marketable_ids
 
     def filter_marketable_items(self, items, marketable_ids):
-        marketable_items = [None, ('itemNum', 'name'), ('INTEGER', 'TEXT')]
+        marketable_items = [None, (
+            'itemNum', 'name', 'ave_cost', 'regSaleVelocity', 'ave_NQ_cost', 'nqSaleVelocity', 'ave_HQ_cost',
+            'hqSaleVelocity'), ('INTEGER', 'TEXT', 'INTEGER', 'REAL', 'INTEGER', 'REAL', 'INTEGER', 'REAL')]
         line_concatenate = []
         for line in items[3:]:
             splitLine = line_concatenate + line.split(',')
             if len(splitLine) >= 98:
                 line_concatenate = []
                 if splitLine[0] in marketable_ids:
-                    marketable_items.append((splitLine[0], splitLine[len(splitLine) - 88]))
+                    marketable_items.append((splitLine[0], splitLine[len(splitLine) - 88], 'NULL', 'NULL', 'NULL',
+                                             'NULL', 'NULL', 'NULL'))
             else:
                 line_concatenate = splitLine
-
-        # else:
-        #     marketable_items.append((splitLine[0], 'NULL'))
         return marketable_items
 
     def filter_marketable_recipes(self, recipes, marketable_ids):

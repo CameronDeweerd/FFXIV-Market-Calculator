@@ -1,7 +1,14 @@
-import json, time, requests
+import json
+import time
+import requests
+import threading
 import pandas as pd
 from SQLhelpers import SQL_manager
 from FFXIV_DB_constructor import FFXIV_DB_creation as DB_create
+
+
+def API_delay():
+    time.sleep(0.15)  # API only allows 7 checks/sec.
 
 
 # gets the velocity and sale data and creates a dict with it
@@ -96,11 +103,12 @@ def get_sale_data(itemNum, location="Crystal", entries=1000):
 # puts the data from the Universalis API into the DB
 def update_from_api(DB, start=0, location="Crystal"):
     table_name = "item"
-    query = f"SELECT itemNum FROM item WHERE IsUntradable IS 0 AND itemNum > {start}"
+    query = f"SELECT itemNum FROM item WHERE itemNum >= {start}"
     data = DB.return_query(query)
 
     for itemNum in data:
-
+        API_delay_thread = threading.Thread(target=API_delay)
+        API_delay_thread.start()
         dictionary, success = get_sale_nums(*itemNum, location)
         if success == 1:
             query = "UPDATE `{}` SET {} WHERE itemNum = %s" % itemNum
@@ -109,21 +117,25 @@ def update_from_api(DB, start=0, location="Crystal"):
             q = query.format(table_name, new_data_value)
             DB.execute_query(q)
             print(f"itemNumber {*itemNum,} updated")
-        time.sleep(.15)  # API only allows 7 checks/sec.
+        API_delay_thread.join()
+
     print("All Sale Data Added to Database")
 
 
 # updates the ingredientCost values 0-9 for the recipe table
 def update_ingredient_costs(DB):
     for i in range(10):
-        numbers = DB.return_query("SELECT * FROM recipe WHERE Number > 10000")
+        numbers = DB.return_query(f"SELECT Number, ItemIngredient{i} FROM recipe")
         for num in numbers:
-            if num[5 + 3 * i] != 0:
-                ave_cost = DB.return_query(f"SELECT ave_cost FROM item WHERE itemNum = {num[5 + 3 * i]}")
+            ingredient_i_id = num[1]
+            if not ingredient_i_id == 0:
+                ave_cost = DB.return_query(f"SELECT ave_cost FROM item WHERE itemNum = {ingredient_i_id}")
                 try:
-                    ave_cost = ave_cost.fetchone()[0]
-                except TypeError:
-                    ave_cost = 999999
+                    ave_cost = ave_cost[0][0]
+                except IndexError:
+                    ave_cost = 9999999
+                if ave_cost == "None":
+                    ave_cost = 9999999
             else:
                 ave_cost = 0
             DB.execute_query(f"UPDATE recipe SET ingredientCost{i} = {ave_cost} WHERE Number = {num[0]}")
@@ -133,14 +145,15 @@ def update_ingredient_costs(DB):
 # copies over the cost to craft data from recipes
 def update_cost_to_craft(DB):
     numbers = DB.return_query("SELECT * FROM item")
-    for num in numbers:
+    for index, num in enumerate(numbers):
         cost = DB.return_query(f"SELECT costToCraft FROM recipe WHERE ItemResult = {num[0]}")
         try:
-            cost = cost.fetchone()[0]
+            cost = cost[0][0]
             DB.execute_query(f"UPDATE item SET costToCraft = {cost} WHERE itemNum = {num[0]}")
-        except TypeError:
+        except IndexError:
             DB.execute_query(f"UPDATE item SET costToCraft = ave_cost WHERE itemNum = {num[0]}")
-        print(f"{num[0]} updated")
+        if index % 100 == 0:
+            print(f"{index}/{len(numbers)} updated")
 
 
 # pulls data from the API, and performs all required calculations on it.
@@ -165,14 +178,20 @@ def profit_table(DB, DB_name, velocity=10, recipeLvl=1000):
     print(frame.to_string(index=False))
 
 
-if __name__ == '__main__':
+def main():
     DB_name = 'market_DB_Zaler'
-    DB = SQL_manager(DB_name)
-    DB_create(DB_name)
+    try:
+        DB_create(DB_name)
+        print("New database created")
+    except ValueError:
+        print("Database already exists")
+        pass
 
-    # full_update(DB, location="Zalera", start=1)
-    # profit_table(DB, DB_name, velocity=3)
+    DB = SQL_manager(DB_name)
+    full_update(DB, location="Zalera", start=0)
+    profit_table(DB, DB_name, velocity=20)
     # profit_table(DB, DB_name, velocity=3, recipeLvl=380)
+
 
 # def calculated_column(conn):
 #     # for i in range(10):
@@ -180,3 +199,7 @@ if __name__ == '__main__':
 #     DB.execute_query("ALTER TABLE recipe DROP COLUMN costToCraft")
 #     ingred_calc = "AmountIngredient0*ingredientCost0 + AmountIngredient1*ingredientCost1 + AmountIngredient2*ingredientCost2 + AmountIngredient3*ingredientCost3 + AmountIngredient4*ingredientCost4 + AmountIngredient5*ingredientCost5 + AmountIngredient6*ingredientCost6 + AmountIngredient7*ingredientCost7 + AmountIngredient8*ingredientCost8 + AmountIngredient9*ingredientCost9"
 #     DB.execute_query(f"ALTER TABLE recipe ADD costToCraft AS ({ingred_calc})")
+
+
+if __name__ == '__main__':
+    main()
