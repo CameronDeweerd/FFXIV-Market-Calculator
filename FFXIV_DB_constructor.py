@@ -12,6 +12,8 @@ class FFXIV_DB_creation():
         pulls data from the universalis API to limit items to marketable items
         pulls data from "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Item.csv" to get item data
         pulls data from "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Recipe.csv" to get recipe data
+        pulls data from "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/WorldDCGroupType.csv" to get dc data
+        pulls data from "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/World.csv" to get world data
 
 
         creates a new database w/ the given name
@@ -39,17 +41,40 @@ class FFXIV_DB_creation():
         recipes[1] = recipes[1].replace('#', 'CSVkey')
         print('Got raw recipe CSV')
 
+        # gets a list of tuples containing the datacentre data
+        datacentres = self.get_data_from_url(
+            'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/WorldDCGroupType.csv')
+        datacentres[1] = datacentres[1].replace('#', 'DCKey')
+        print('Got raw datacentre CSV')
+
+        worlds = self.get_data_from_url(
+            'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/World.csv')
+        worlds[1] = worlds[1].replace('#', 'WorldKey')
+        print('got raw world CSV')
+
         marketable_items = self.filter_marketable_items(items, marketable_ids)
         print('item CSV filtered to only marketable')
 
         marketable_recipes = self.filter_marketable_recipes(recipes, marketable_ids)
         print('recipes CSV filtered to only marketable')
 
+        usable_datacentres = self.filter_datacentres(datacentres)
+        print('datacentres CSV filtered to only usable')
+
+        usable_worlds = self.filter_worlds(worlds)
+        print('worlds CSV filtered to only usable')
+
         self.csv_to_DB(marketable_items, 'item')
         print('item table created')
 
         self.csv_to_DB(marketable_recipes, 'recipe')
         print('recipe table created')
+
+        self.csv_to_DB(usable_datacentres, 'datacentre')
+        print('datacentre table created')
+
+        self.csv_to_DB(usable_worlds, 'world')
+        print('world table created')
 
         for i in range(10):
             self.db.execute_query(f"ALTER TABLE recipe ADD ingredientCost{i} INTEGER DEFAULT 0;")
@@ -120,6 +145,32 @@ class FFXIV_DB_creation():
             if crafted_item_id in marketable_ids:
                 marketable_recipes.append(tuple(split_line))
         return marketable_recipes
+
+    def filter_datacentres(self, datacentres):
+        usable_datacentres = datacentres[0:3]
+        usable_datacentres[1] = 'DCKey,Name,Region'
+        usable_datacentres[2] = 'INTEGER, STRING, INTEGER'
+
+        for line in datacentres[3:]
+            split_line = line.split(',')
+            datacentre_id = int(split_line[0])
+            if datacentre_id >= 1 or datacentre_id < 99:
+                usable_datacentres.append(tuple(split_line))
+        return usable_datacentres
+
+    def filter_worlds(self, worlds):
+        usable_worlds = worlds[0:3]
+        usable_worlds[1] = 'WorldKey, Name, DataCenter'
+        usable_worlds[2] = 'INTEGER, STRING, INTEGER'
+
+        for line in worlds:
+            split_line = line.split(',')
+            world_id = int(split_line[0])
+            is_public = split_line[-1]
+            if is_public == 'TRUE' and  world_id != 38:
+                split_line = split_line[0] + split_line[2] + split_line[5]
+                usable_worlds.append(tuple)
+        return usable_worlds
 
     # function used to convert original files into the DB
     def csv_to_DB(self, csv_data, table_name):

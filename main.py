@@ -1,3 +1,4 @@
+import configparser
 import json
 import time
 import requests
@@ -6,13 +7,20 @@ import pandas as pd
 from SQLhelpers import SQL_manager
 from FFXIV_DB_constructor import FFXIV_DB_creation as DB_create
 
+def load_config():
+    cfg = configparser.ConfigParser
+    cfg.read("config.ini")
+    type = cfg.get('MarketboardType', 'world')
+    datacentre = cfg.get('Datacentre', 'Crystal')
+    world = cfg.get('World', 'Zalera')
+    result_qty = cfg.getint('Quantity', 50)
+    return type, datacentre, world, result_qty
 
 def API_delay():
     time.sleep(0.15)  # API only allows 7 checks/sec.
 
-
 # gets the velocity and sale data and creates a dict with it
-def get_sale_nums(itemNum, location="Crystal"):
+def get_sale_nums(itemNum, location="Zurvan"):
     sale_data = {
         "regSaleVelocity": None,
         "nqSaleVelocity": None,
@@ -91,7 +99,7 @@ def get_sale_nums(itemNum, location="Crystal"):
 
 
 # Calls the Universalis API and returns the data and the status code
-def get_sale_data(itemNum, location="Crystal", entries=1000):
+def get_sale_data(itemNum, location="Zurvan", entries=1000):
     r = requests.get(f'https://universalis.app/api/history/{location}/{itemNum}?entries={entries}')
     try:
         data = json.loads(r.content.decode('utf-8'))
@@ -101,7 +109,7 @@ def get_sale_data(itemNum, location="Crystal", entries=1000):
 
 
 # puts the data from the Universalis API into the DB
-def update_from_api(DB, start=0, location="Crystal"):
+def update_from_api(DB, start=0, location="Zurvan"):
     table_name = "item"
     query = f"SELECT itemNum FROM item WHERE itemNum >= {start}"
     data = DB.return_query(query)
@@ -157,7 +165,7 @@ def update_cost_to_craft(DB):
 
 
 # pulls data from the API, and performs all required calculations on it.
-def full_update(DB, location="Crystal", start=0):
+def full_update(DB, location="Zurvan", start=0):
     update_from_api(DB, start=start, location=location)
     update_ingredient_costs(DB)
     update_cost_to_craft(DB)
@@ -179,7 +187,23 @@ def profit_table(DB, DB_name, velocity=10, recipeLvl=1000):
 
 
 def main():
-    DB_name = 'market_DB_Zaler'
+    main_menu = {}
+
+    while selection == 0:
+        options = main_menu.keys()
+        options.sort()
+        for entry in options:
+            print entry, main_menu[entry]
+
+        selection = raw_input("What would you like to do? ")
+        if selection == '1':
+            load_placeholder = ""
+        elif selection == '2':
+            update_placeholder = ""
+        elif selection == '3':
+            print("Invalid Option")
+
+    DB_name = 'market_DB_Zurvan'
     try:
         DB_create(DB_name)
         print("New database created")
