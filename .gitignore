@@ -1,4 +1,4 @@
-/DB Browser for SQLite.exe - Shortcut.lnk
-/market_DB_Zalera - Copy
-/market_DB_Zaler
-/market_DB - Copy
+market_DB*
+.idea/
+venv/
+__pycache__
