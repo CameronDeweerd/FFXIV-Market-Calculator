@@ -1,29 +1,49 @@
-from SQLhelpers import SQL_manager
+from SQLhelpers import SqlManager
 import requests
 import sys
 import os
 import pathlib
 
 
-class FFXIV_DB_creation():
+def filter_marketable_items(items, marketable_ids):
+    marketable_items = [None, (
+        'itemNum', 'name', 'ave_cost', 'regSaleVelocity', 'ave_NQ_cost', 'nqSaleVelocity',
+        'ave_HQ_cost', 'hqSaleVelocity'), (
+        'INTEGER', 'TEXT', 'INTEGER', 'REAL', 'INTEGER', 'REAL',
+        'INTEGER', 'REAL')]
+    line_concatenate = []
+    for line in items[3:]:
+        split_line = line_concatenate + line.split(',')
+        if len(split_line) >= 98:
+            line_concatenate = []
+            if split_line[0] in marketable_ids:
+                marketable_items.append((split_line[0], split_line[len(split_line) - 88], 'NULL', 'NULL', 'NULL',
+                                         'NULL', 'NULL', 'NULL'))
+        else:
+            line_concatenate = split_line
+    return marketable_items
+
+
+class FfxivDbCreation:
 
     def __init__(self, db_name):
-        '''
+        """
         pulls data from the universalis API to limit items to marketable items
-        pulls data from "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Item.csv" to get item data
-        pulls data from "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Recipe.csv" to get recipe data
-        pulls data from "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/WorldDCGroupType.csv" to get dc data
-        pulls data from "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/World.csv" to get world data
+        pulls data from:
+         "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Item.csv" to get item data
+         "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Recipe.csv" to get recipe data
+         "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/WorldDCGroupType.csv" to get dc data
+         "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/World.csv" to get world data
 
 
         creates a new database w/ the given name
 
         :param db_name: str The name that the database should be called
-        '''
+        """
         if os.path.exists(pathlib.Path(__file__).parent / db_name):
             raise ValueError("Database with that name already exists")
 
-        self.db = SQL_manager(db_name)
+        self.db = SqlManager(db_name)
 
         # gets a list of integers in string format ['2','3','5','6',...]
         marketable_ids = self.get_marketable_ids()
@@ -47,12 +67,13 @@ class FFXIV_DB_creation():
         datacentres[1] = datacentres[1].replace('#', 'DCKey')
         print('Got raw datacentre CSV')
 
+        # gets a list of tuples containing the world data
         worlds = self.get_data_from_url(
             'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/World.csv')
         worlds[1] = worlds[1].replace('#', 'WorldKey')
         print('got raw world CSV')
 
-        marketable_items = self.filter_marketable_items(items, marketable_ids)
+        marketable_items = filter_marketable_items(items, marketable_ids)
         print('item CSV filtered to only marketable')
 
         marketable_recipes = self.filter_marketable_recipes(recipes, marketable_ids)
@@ -64,16 +85,16 @@ class FFXIV_DB_creation():
         usable_worlds = self.filter_worlds(worlds)
         print('worlds CSV filtered to only usable')
 
-        self.csv_to_DB(marketable_items, 'item')
+        self.csv_to_db(marketable_items, 'item')
         print('item table created')
 
-        self.csv_to_DB(marketable_recipes, 'recipe')
+        self.csv_to_db(marketable_recipes, 'recipe')
         print('recipe table created')
 
-        self.csv_to_DB(usable_datacentres, 'datacentre')
+        self.csv_to_db(usable_datacentres, 'datacentre')
         print('datacentre table created')
 
-        self.csv_to_DB(usable_worlds, 'world')
+        self.csv_to_db(usable_worlds, 'world')
         print('world table created')
 
         for i in range(10):
@@ -89,17 +110,20 @@ class FFXIV_DB_creation():
 
         self.db.execute_query(f"ALTER TABLE item ADD costToCraft INTEGER DEFAULT 0;")
         # self.db.execute_query(
-        #     f"ALTER TABLE item ADD costToCraft GENERATED ALWAYS AS (SELECT costToCraft FROM recipe WHERE ItemResult = itemNum LIMIT 1);")
+        #     f"ALTER TABLE item ADD costToCraft GENERATED ALWAYS AS (SELECT costToCraft
+        #     FROM recipe WHERE ItemResult = itemNum LIMIT 1);")
         self.db.execute_query(f"ALTER TABLE item ADD craftProfit GENERATED ALWAYS AS (ave_cost - costToCraft);")
 
-        # TODO add the additional columns like: ave_cost,regSaleVelocity,ave_NQ_cost,nqSaleVelocity,ave_HQ_cost,hqSaleVelocity'
+        # TODO add the additional columns like:
+        #  ave_cost,regSaleVelocity,ave_NQ_cost,nqSaleVelocity,ave_HQ_cost,hqSaleVelocity'
 
-    def get_data_from_url(self, url):
-        '''
+    @staticmethod
+    def get_data_from_url(url):
+        """
         Calls a web API to get data
 
         :return: content [list]
-        '''
+        """
         r = requests.get(url)
         if r.status_code == 200:
             data = r.content.decode('utf-8-sig')
@@ -108,34 +132,35 @@ class FFXIV_DB_creation():
             sys.exit(f"{url} not available")
 
     def get_marketable_ids(self):
-        marketable_idData = self.get_data_from_url("https://universalis.app/api/marketable")
-        marketable_ids = marketable_idData[0].split(',')
+        marketable_id_data = self.get_data_from_url("https://universalis.app/api/marketable")
+        marketable_ids = marketable_id_data[0].split(',')
         marketable_ids[0] = marketable_ids[0].replace('[', '')
         marketable_ids[-1] = marketable_ids[-1].replace(']', '')
         return marketable_ids
 
-    def filter_marketable_items(self, items, marketable_ids):
-        marketable_items = [None, (
-            'itemNum', 'name', 'ave_cost', 'regSaleVelocity', 'ave_NQ_cost', 'nqSaleVelocity', 'ave_HQ_cost',
-            'hqSaleVelocity'), ('INTEGER', 'TEXT', 'INTEGER', 'REAL', 'INTEGER', 'REAL', 'INTEGER', 'REAL')]
-        line_concatenate = []
-        for line in items[3:]:
-            splitLine = line_concatenate + line.split(',')
-            if len(splitLine) >= 98:
-                line_concatenate = []
-                if splitLine[0] in marketable_ids:
-                    marketable_items.append((splitLine[0], splitLine[len(splitLine) - 88], 'NULL', 'NULL', 'NULL',
-                                             'NULL', 'NULL', 'NULL'))
-            else:
-                line_concatenate = splitLine
-        return marketable_items
-
-    def filter_marketable_recipes(self, recipes, marketable_ids):
+    @staticmethod
+    def filter_marketable_recipes(recipes, marketable_ids):
         marketable_recipes = recipes[0:3]
         marketable_recipes[
-            1] = 'CSVKey,Number,CraftType,RecipeLevelTable,ItemResult,AmountResult,ItemIngredient0,AmountIngredient0,ItemIngredient1,AmountIngredient1,ItemIngredient2,AmountIngredient2,ItemIngredient3,AmountIngredient3,ItemIngredient4,AmountIngredient4,ItemIngredient5,AmountIngredient5,ItemIngredient6,AmountIngredient6,ItemIngredient7,AmountIngredient7,ItemIngredient8,AmountIngredient8,ItemIngredient9,AmountIngredient9,emptyColumn1,IsSecondary,MaterialQualityFactor,DifficultyFactor,QualityFactor,DurabilityFactor,emptyColumn2,RequiredCraftsmanship,RequiredControl,QuickSynthCraftsmanship,QuickSynthControl,SecretRecipeBook,Quest,CanQuickSynth,CanHq,ExpRewarded,StatusRequired,ItemRequired,IsSpecializationRequired,IsExpert,PatchNumber'
+            1] = 'CSVKey,Number,CraftType,RecipeLevelTable,ItemResult,AmountResult,ItemIngredient0,AmountIngredient0,' \
+                 'ItemIngredient1,AmountIngredient1,ItemIngredient2,AmountIngredient2,' \
+                 'ItemIngredient3,AmountIngredient3,ItemIngredient4,AmountIngredient4,' \
+                 'ItemIngredient5,AmountIngredient5,ItemIngredient6,AmountIngredient6,' \
+                 'ItemIngredient7,AmountIngredient7,ItemIngredient8,AmountIngredient8,' \
+                 'ItemIngredient9,AmountIngredient9,emptyColumn1,IsSecondary,MaterialQualityFactor,DifficultyFactor,' \
+                 'QualityFactor,DurabilityFactor,emptyColumn2,RequiredCraftsmanship,RequiredControl,' \
+                 'QuickSynthCraftsmanship,QuickSynthControl,SecretRecipeBook,Quest,CanQuickSynth,CanHq,ExpRewarded,' \
+                 'StatusRequired,ItemRequired,IsSpecializationRequired,IsExpert,PatchNumber'
         marketable_recipes[
-            2] = 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER'
+            2] = 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER'
         marketable_recipes[1] = tuple(marketable_recipes[1].split(','))
         marketable_recipes[2] = tuple(marketable_recipes[2].split(','))
 
@@ -146,19 +171,21 @@ class FFXIV_DB_creation():
                 marketable_recipes.append(tuple(split_line))
         return marketable_recipes
 
-    def filter_datacentres(self, datacentres):
+    @staticmethod
+    def filter_datacentres(datacentres):
         usable_datacentres = datacentres[0:3]
         usable_datacentres[1] = 'DCKey,Name,Region'
         usable_datacentres[2] = 'INTEGER, STRING, INTEGER'
 
-        for line in datacentres[3:]
+        for line in datacentres[3:]:
             split_line = line.split(',')
             datacentre_id = int(split_line[0])
             if datacentre_id >= 1 or datacentre_id < 99:
                 usable_datacentres.append(tuple(split_line))
         return usable_datacentres
 
-    def filter_worlds(self, worlds):
+    @staticmethod
+    def filter_worlds(worlds):
         usable_worlds = worlds[0:3]
         usable_worlds[1] = 'WorldKey, Name, DataCenter'
         usable_worlds[2] = 'INTEGER, STRING, INTEGER'
@@ -167,36 +194,36 @@ class FFXIV_DB_creation():
             split_line = line.split(',')
             world_id = int(split_line[0])
             is_public = split_line[-1]
-            if is_public == 'TRUE' and  world_id != 38:
+            if is_public == 'TRUE' and world_id != 38:
                 split_line = split_line[0] + split_line[2] + split_line[5]
-                usable_worlds.append(tuple)
+                usable_worlds.append(tuple(split_line))
         return usable_worlds
 
     # function used to convert original files into the DB
-    def csv_to_DB(self, csv_data, table_name):
-        DB = self.db
+    def csv_to_db(self, csv_data, table_name):
+        db = self.db
 
-        columnNames = csv_data[1]
-        dataTypes = csv_data[2]
-        num_columns = len(columnNames)
+        column_names = csv_data[1]
+        data_types = csv_data[2]
+        num_columns = len(column_names)
 
         question_marks = ""
-        for _ in columnNames:
+        for _ in column_names:
             question_marks = question_marks + '?,'
         question_marks = question_marks[:-1]
 
-        for column, name in enumerate(columnNames):
+        for column, name in enumerate(column_names):
             if name == "":
-                columnNames[column] = f'unnamedColumn{column}'
+                column_names[column] = f'unnamedColumn{column}'
 
         # create a new table
         creation_command = f"CREATE TABLE IF NOT EXISTS {table_name} ("
         for i in range(num_columns):
-            creation_command = creation_command + f"{columnNames[i]} {dataTypes[i]}, "
+            creation_command = creation_command + f"{column_names[i]} {data_types[i]}, "
         creation_command = creation_command[:-2] + ")"  # remove the final comma and close the command
-        DB.execute_query(creation_command)
+        db.execute_query(creation_command)
 
         # insert all values
         insert_command = f"INSERT INTO {table_name} VALUES ({question_marks})"
-        DB.execute_query_many(insert_command, csv_data[3:])
+        db.execute_query_many(insert_command, csv_data[3:])
         return

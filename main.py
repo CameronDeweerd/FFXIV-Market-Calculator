@@ -1,57 +1,70 @@
 import configparser
 import json
-import time
+import os
+import pandas as pd
 import requests
 import threading
-import pandas as pd
-from SQLhelpers import SQL_manager
-from FFXIV_DB_constructor import FFXIV_DB_creation as DB_create
+import time
+
+from FFXIV_DB_constructor import FfxivDbCreation as Db_Create
+from SQLhelpers import SqlManager
+
 
 def load_config():
     cfg = configparser.ConfigParser
     cfg.read("config.ini")
-    type = cfg.get('MarketboardType', 'world')
-    datacentre = cfg.get('Datacentre', 'Crystal')
-    world = cfg.get('World', 'Zalera')
-    result_qty = cfg.getint('Quantity', 50)
-    return type, datacentre, world, result_qty
+    marketboard_type = cfg["MAIN"].get('MarketboardType', 'world')
+    datacentre = cfg["MAIN"].get('Datacentre', 'Crystal')
+    world = cfg["MAIN"].get('World', 'Zalera')
+    result_qty = cfg["MAIN"].getint('ResultQuantity', 50)
+    update_qty = cfg["MAIN"].getint('UpdateQuantity', 0)
+    config_dict = {
+        "marketboard_type": marketboard_type,
+        "datacentre": datacentre,
+        "world": world,
+        "result_qty": result_qty,
+        "update_qty": update_qty
+    }
+    return config_dict
 
-def API_delay():
+
+def api_delay():
     time.sleep(0.15)  # API only allows 7 checks/sec.
 
+
 # gets the velocity and sale data and creates a dict with it
-def get_sale_nums(itemNum, location="Zurvan"):
+def get_sale_nums(item_number, location):
     sale_data = {
-        "regSaleVelocity": None,
-        "nqSaleVelocity": None,
-        "hqSaleVelocity": None,
-        "ave_NQ_cost": None,
-        "ave_HQ_cost": None,
+        "regular_sale_velocity": None,
+        "nq_sale_velocity": None,
+        "hq_sale_velocity": None,
+        "ave_nq_cost": None,
+        "ave_hq_cost": None,
         "ave_cost": None
     }
 
-    data, r = get_sale_data(itemNum, location)
+    data, r = get_sale_data(item_number, location)
     if r.status_code == 404 or not data:
-        print(f"itemNumber {*itemNum,} found no data")
+        print(f"item_number {*item_number,} found no data")
         return sale_data, 0
 
     try:
         if data["regularSaleVelocity"] > 142:
-            data, r = get_sale_data(itemNum, location, 10000)
-        regSaleVelocity = round(data["regularSaleVelocity"], 1)
-        nqSaleVelocity = round(data["nqSaleVelocity"], 1)
-        hqSaleVelocity = round(data["hqSaleVelocity"], 1)
-        if regSaleVelocity == 0:
+            data, r = get_sale_data(item_number, location, 10000)
+        regular_sale_velocity = round(data["regularSaleVelocity"], 1)
+        nq_sale_velocity = round(data["nq_sale_velocity"], 1)
+        hq_sale_velocity = round(data["hq_sale_velocity"], 1)
+        if regular_sale_velocity == 0:
             return sale_data, 1
     except Exception as err:
-        print(f"{err} w/ itemNum {itemNum}")
+        print(f"{err} w/ item_number {item_number}")
         return sale_data, 0
 
     sales = data["entries"]
-    total_NQ_cost = 0
-    total_NQ_sales = 0
-    total_HQ_cost = 0
-    total_HQ_sales = 0
+    total_nq_cost = 0
+    total_nq_sales = 0
+    total_hq_cost = 0
+    total_hq_sales = 0
 
     # calculate the sales for nq and hq
     cutoff = time.time() - 86400 * 28
@@ -60,47 +73,47 @@ def get_sale_nums(itemNum, location="Zurvan"):
             try:
                 if sale["pricePerUnit"] < 1000000:
                     if not sale["hq"]:
-                        total_NQ_cost += sale["pricePerUnit"] * sale["quantity"]
-                        total_NQ_sales += sale["quantity"]
+                        total_nq_cost += sale["pricePerUnit"] * sale["quantity"]
+                        total_nq_sales += sale["quantity"]
                     else:
-                        total_HQ_cost += sale["pricePerUnit"] * sale["quantity"]
-                        total_HQ_sales += sale["quantity"]
+                        total_hq_cost += sale["pricePerUnit"] * sale["quantity"]
+                        total_hq_sales += sale["quantity"]
             except:
                 return sale_data, 1
         else:
             break
 
     # get averages and avoid divide by zero
-    if total_NQ_sales == 0:
-        ave_NQ_cost = None
+    if total_nq_sales == 0:
+        ave_nq_cost = None
     else:
-        ave_NQ_cost = int(total_NQ_cost / total_NQ_sales)
+        ave_nq_cost = int(total_nq_cost / total_nq_sales)
 
-    if total_HQ_sales == 0:
-        ave_HQ_cost = None
+    if total_hq_sales == 0:
+        ave_hq_cost = None
     else:
-        ave_HQ_cost = int(total_HQ_cost / total_HQ_sales)
+        ave_hq_cost = int(total_hq_cost / total_hq_sales)
 
-    if total_NQ_sales + total_HQ_sales == 0:
+    if total_nq_sales + total_hq_sales == 0:
         ave_cost = None
     else:
-        ave_cost = int((total_NQ_cost + total_HQ_cost) / (total_NQ_sales + total_HQ_sales))
+        ave_cost = int((total_nq_cost + total_hq_cost) / (total_nq_sales + total_hq_sales))
 
     # create dict of info we care about
     sale_data = {
-        "regSaleVelocity": regSaleVelocity,
-        "nqSaleVelocity": nqSaleVelocity,
-        "hqSaleVelocity": hqSaleVelocity,
-        "ave_NQ_cost": ave_NQ_cost,
-        "ave_HQ_cost": ave_HQ_cost,
+        "regular_sale_velocity": regular_sale_velocity,
+        "nq_sale_velocity": nq_sale_velocity,
+        "hq_sale_velocity": hq_sale_velocity,
+        "ave_nq_cost": ave_nq_cost,
+        "ave_hq_cost": ave_hq_cost,
         "ave_cost": ave_cost
     }
     return sale_data, 1
 
 
 # Calls the Universalis API and returns the data and the status code
-def get_sale_data(itemNum, location="Zurvan", entries=1000):
-    r = requests.get(f'https://universalis.app/api/history/{location}/{itemNum}?entries={entries}')
+def get_sale_data(item_number, location, entries=1000):
+    r = requests.get(f'https://universalis.app/api/history/{location}/{item_number}?entries={entries}')
     try:
         data = json.loads(r.content.decode('utf-8'))
         return data, r
@@ -108,36 +121,36 @@ def get_sale_data(itemNum, location="Zurvan", entries=1000):
         return None, r
 
 
-# puts the data from the Universalis API into the DB
-def update_from_api(DB, start=0, location="Zurvan"):
+# puts the data from the Universalis API into the db
+def update_from_api(db, location, start):
     table_name = "item"
-    query = f"SELECT itemNum FROM item WHERE itemNum >= {start}"
-    data = DB.return_query(query)
+    query = f"SELECT item_number FROM item WHERE item_number >= {start}"
+    data = db.return_query(query)
 
-    for itemNum in data:
-        API_delay_thread = threading.Thread(target=API_delay)
-        API_delay_thread.start()
-        dictionary, success = get_sale_nums(*itemNum, location)
+    for item_number in data:
+        api_delay_thread = threading.Thread(target=api_delay)
+        api_delay_thread.start()
+        dictionary, success = get_sale_nums(*item_number, location)
         if success == 1:
-            query = "UPDATE `{}` SET {} WHERE itemNum = %s" % itemNum
+            query = "UPDATE `{}` SET {} WHERE item_number = %s" % item_number
             new_data_value = ', '.join(
                 ['`{}`="{}"'.format(column_name, value) for column_name, value in dictionary.items()])
             q = query.format(table_name, new_data_value)
-            DB.execute_query(q)
-            print(f"itemNumber {*itemNum,} updated")
-        API_delay_thread.join()
+            db.execute_query(q)
+            print(f"item_number {*item_number,} updated")
+        api_delay_thread.join()
 
     print("All Sale Data Added to Database")
 
 
 # updates the ingredientCost values 0-9 for the recipe table
-def update_ingredient_costs(DB):
+def update_ingredient_costs(db):
     for i in range(10):
-        numbers = DB.return_query(f"SELECT Number, ItemIngredient{i} FROM recipe")
+        numbers = db.return_query(f"SELECT Number, ItemIngredient{i} FROM recipe")
         for num in numbers:
             ingredient_i_id = num[1]
             if not ingredient_i_id == 0:
-                ave_cost = DB.return_query(f"SELECT ave_cost FROM item WHERE itemNum = {ingredient_i_id}")
+                ave_cost = db.return_query(f"SELECT ave_cost FROM item WHERE item_number = {ingredient_i_id}")
                 try:
                     ave_cost = ave_cost[0][0]
                 except IndexError:
@@ -146,83 +159,96 @@ def update_ingredient_costs(DB):
                     ave_cost = 9999999
             else:
                 ave_cost = 0
-            DB.execute_query(f"UPDATE recipe SET ingredientCost{i} = {ave_cost} WHERE Number = {num[0]}")
+            db.execute_query(f"UPDATE recipe SET ingredientCost{i} = {ave_cost} WHERE Number = {num[0]}")
         print(f"ingredientCost{i} complete")
 
 
 # copies over the cost to craft data from recipes
-def update_cost_to_craft(DB):
-    numbers = DB.return_query("SELECT * FROM item")
+def update_cost_to_craft(db):
+    numbers = db.return_query("SELECT * FROM item")
     for index, num in enumerate(numbers):
-        cost = DB.return_query(f"SELECT costToCraft FROM recipe WHERE ItemResult = {num[0]}")
+        cost = db.return_query(f"SELECT costToCraft FROM recipe WHERE ItemResult = {num[0]}")
         try:
             cost = cost[0][0]
-            DB.execute_query(f"UPDATE item SET costToCraft = {cost} WHERE itemNum = {num[0]}")
+            db.execute_query(f"UPDATE item SET costToCraft = {cost} WHERE item_number = {num[0]}")
         except IndexError:
-            DB.execute_query(f"UPDATE item SET costToCraft = ave_cost WHERE itemNum = {num[0]}")
+            db.execute_query(f"UPDATE item SET costToCraft = ave_cost WHERE item_number = {num[0]}")
         if index % 100 == 0:
             print(f"{index}/{len(numbers)} updated")
 
 
 # pulls data from the API, and performs all required calculations on it.
-def full_update(DB, location="Zurvan", start=0):
-    update_from_api(DB, start=start, location=location)
-    update_ingredient_costs(DB)
-    update_cost_to_craft(DB)
+def full_update(db, location, start):
+    update_from_api(db, location, start)
+    update_ingredient_costs(db)
+    update_cost_to_craft(db)
 
 
-def profit_table(DB, DB_name, velocity=10, recipeLvl=1000):
+def profit_table(db, db_name, velocity=10, recipelvl=1000):
     print("\n\n")
-    toDisplay = "name, craftProfit, regSaleVelocity, ave_cost, costToCraft"
-    levelLimitedRecipes = f"SELECT ItemResult FROM recipe WHERE RecipeLevelTable <={recipeLvl}"
-    x = DB.return_query(
-        f"SELECT {toDisplay} FROM item WHERE regSaleVelocity >= {velocity} AND itemNum IN ({levelLimitedRecipes}) ORDER BY craftProfit DESC LIMIT 50")
+    to_display = "name, craftProfit, regular_sale_velocity, ave_cost, costToCraft"
+    level_limited_recipes = f"SELECT ItemResult FROM recipe WHERE RecipeLevelTable <={recipelvl}"
+    x = db.return_query(
+        f"SELECT {to_display} FROM item WHERE regular_sale_velocity >= {velocity} AND item_number "
+        f"IN ({level_limited_recipes}) ORDER BY craftProfit DESC LIMIT 50")
 
     frame = pd.DataFrame(x)
-    print(f"             Data from {DB_name} showing items w/ {velocity} or more daily sales")
+    print(f"             Data from {db_name} showing items w/ {velocity} or more daily sales")
     print(f"        _____________________________________________________________________________")
     frame.style.set_caption("Hello World")
-    frame.columns = [toDisplay.split(", ")]
+    frame.columns = [to_display.split(", ")]
     print(frame.to_string(index=False))
 
 
 def main():
-    main_menu = {}
+    config_dict = load_config()
 
-    while selection == 0:
-        options = main_menu.keys()
-        options.sort()
-        for entry in options:
-            print entry, main_menu[entry]
+    if config_dict["marketboard_type"] == "World":
+        location = config_dict["world"]
+    elif config_dict["marketboard_type"] == "Datacentre" or config_dict["marketboard_type"] == "Datacenter":
+        location = config_dict["datacentre"]
+    else:
+        print("Invalid Config MarketboardType Selection, Field should be one of Datacentre/Datacenter/World")
+        exit()
+    db_name = os.path.join("databases", config_dict["marketboard_type"] + "_" + location)
 
-        selection = raw_input("What would you like to do? ")
-        if selection == '1':
-            load_placeholder = ""
-        elif selection == '2':
-            update_placeholder = ""
-        elif selection == '3':
-            print("Invalid Option")
-
-    DB_name = 'market_DB_Zurvan'
     try:
-        DB_create(DB_name)
-        print("New database created")
+        Db_Create(db_name)
+        print("New World or DC database created")
     except ValueError:
-        print("Database already exists")
+        print("World or DC Database already exists")
         pass
 
-    DB = SQL_manager(DB_name)
-    full_update(DB, location="Zalera", start=0)
-    profit_table(DB, DB_name, velocity=20)
-    # profit_table(DB, DB_name, velocity=3, recipeLvl=380)
+    state_file = os.path.join("databases", "state_file")
+    try:
+        Db_Create(state_file)
+        print("New State File DB Created")
+    except ValueError:
+        print("State File Database already exists")
+        pass
+
+    state_db = SqlManager(db_name)
+    location_start = state_db.return_query(
+        f'SELECT start FROM location_state WHERE '
+        f'marketboard_type = {config_dict["marketboard_type"]} AND location = location'
+    )
+    start = int(location_start[0])
+
+    location_db = SqlManager(db_name)
+    full_update(location_db, location, start)
+    profit_table(location_db, db_name, velocity=20)
+    # profit_table(db, db_name, velocity=3, recipeLvl=380)
 
 
 # def calculated_column(conn):
 #     # for i in range(10):
-#     #     DB.execute_query(f"UPDATE recipe SET ingredientCost{i} = 0")
-#     DB.execute_query("ALTER TABLE recipe DROP COLUMN costToCraft")
-#     ingred_calc = "AmountIngredient0*ingredientCost0 + AmountIngredient1*ingredientCost1 + AmountIngredient2*ingredientCost2 + AmountIngredient3*ingredientCost3 + AmountIngredient4*ingredientCost4 + AmountIngredient5*ingredientCost5 + AmountIngredient6*ingredientCost6 + AmountIngredient7*ingredientCost7 + AmountIngredient8*ingredientCost8 + AmountIngredient9*ingredientCost9"
-#     DB.execute_query(f"ALTER TABLE recipe ADD costToCraft AS ({ingred_calc})")
+#     #     db.execute_query(f"UPDATE recipe SET ingredientCost{i} = 0")
+#     db.execute_query("ALTER TABLE recipe DROP COLUMN costToCraft")
+#     ingred_calc = "AmountIngredient0*ingredientCost0 + AmountIngredient1*ingredientCost1 +
+#     AmountIngredient2*ingredientCost2 + AmountIngredient3*ingredientCost3 + AmountIngredient4*ingredientCost4 +
+#     AmountIngredient5*ingredientCost5 + AmountIngredient6*ingredientCost6 + AmountIngredient7*ingredientCost7 +
+#     AmountIngredient8*ingredientCost8 + AmountIngredient9*ingredientCost9"
+#     db.execute_query(f"ALTER TABLE recipe ADD costToCraft AS ({ingred_calc})")
 
 
 if __name__ == '__main__':
