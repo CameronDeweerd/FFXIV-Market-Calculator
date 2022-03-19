@@ -11,21 +11,44 @@ from SQLhelpers import SqlManager
 
 
 def load_config():
-    cfg = configparser.ConfigParser
+    cfg = configparser.ConfigParser()
     cfg.read("config.ini")
     marketboard_type = cfg["MAIN"].get('MarketboardType', 'world')
     datacentre = cfg["MAIN"].get('Datacentre', 'Crystal')
     world = cfg["MAIN"].get('World', 'Zalera')
-    result_qty = cfg["MAIN"].getint('ResultQuantity', 50)
-    update_qty = cfg["MAIN"].getint('UpdateQuantity', 0)
+    result_quantity = cfg["MAIN"].getint('ResultQuantity', 50)
+    update_quantity = cfg["MAIN"].getint('UpdateQuantity', 0)
     config_dict = {
-        "marketboard_type": marketboard_type,
-        "datacentre": datacentre,
-        "world": world,
-        "result_qty": result_qty,
-        "update_qty": update_qty
+        "marketboard_type": marketboard_type.capitalize(),
+        "datacentre": datacentre.capitalize(),
+        "world": world.capitalize(),
+        "result_quantity": result_quantity,
+        "update_quantity": update_quantity
     }
     return config_dict
+
+
+def config_validation(config_dict, global_db):
+
+    if config_dict["marketboard_type"] not in ["World", "Datacentre", "Datacenter"]:
+        print("Config Error: Marketboard Type is Unknown, this value should be World, Datacentre, or Datacenter")
+        exit()
+
+    if config_dict["datacentre"] not in global_db.return_query(f'SELECT Name FROM datacentre'):
+        print("Config Error: Datacentre is not in Database, check config")
+        exit()
+
+    if config_dict["world"] not in global_db.return_query(f'SELECT Name FROM world'):
+        print("Config Error: World is not in Database, check config")
+        exit()
+
+    if isinstance(config_dict["result_quantity"], int) and config_dict["result_quantity"] > 0:
+        print("Config Error: Result Quantity must be a whole number and greater than 0")
+        exit()
+
+    if isinstance(config_dict["update_quantity"], int):
+        print("Config Error: Update Quantity must be a whole number")
+        exit()
 
 
 def api_delay():
@@ -122,9 +145,13 @@ def get_sale_data(item_number, location, entries=1000):
 
 
 # puts the data from the Universalis API into the db
-def update_from_api(db, location, start):
+def update_from_api(db, location, start_id, update_quantity):
     table_name = "item"
-    query = f"SELECT item_number FROM item WHERE item_number >= {start}"
+    if update_quantity == 0:
+        query = f"SELECT item_number FROM item WHERE item_number >= {start_id}"
+    else:
+        query = f"SELECT item_number FROM item WHERE item_number >= {start_id} " \
+                f"ORDER BY item_number ASC LIMIT {update_quantity}"
     data = db.return_query(query)
 
     for item_number in data:
@@ -178,19 +205,19 @@ def update_cost_to_craft(db):
 
 
 # pulls data from the API, and performs all required calculations on it.
-def full_update(db, location, start):
-    update_from_api(db, location, start)
+def update(db, location, start_id, update_quantity):
+    update_from_api(db, location, start_id, update_quantity)
     update_ingredient_costs(db)
     update_cost_to_craft(db)
 
 
-def profit_table(db, db_name, velocity=10, recipelvl=1000):
+def profit_table(db, db_name, result_quantity, velocity=10, recipe_lvl=1000):
     print("\n\n")
     to_display = "name, craftProfit, regular_sale_velocity, ave_cost, costToCraft"
-    level_limited_recipes = f"SELECT ItemResult FROM recipe WHERE RecipeLevelTable <={recipelvl}"
+    level_limited_recipes = f"SELECT ItemResult FROM recipe WHERE RecipeLevelTable <={recipe_lvl}"
     x = db.return_query(
         f"SELECT {to_display} FROM item WHERE regular_sale_velocity >= {velocity} AND item_number "
-        f"IN ({level_limited_recipes}) ORDER BY craftProfit DESC LIMIT 50")
+        f"IN ({level_limited_recipes}) ORDER BY craftProfit DESC LIMIT {result_quantity}")
 
     frame = pd.DataFrame(x)
     print(f"             Data from {db_name} showing items w/ {velocity} or more daily sales")
@@ -201,43 +228,56 @@ def profit_table(db, db_name, velocity=10, recipelvl=1000):
 
 
 def main():
-    config_dict = load_config()
+    global_db_path = os.path.join("databases", "global_db")
+    try:
+        Db_Create(global_db_path)
+        print("New Global DB Created")
+    except ValueError:
+        print("Global Database already exists")
+        pass
+    global_db = SqlManager(global_db_path)
 
-    if config_dict["marketboard_type"] == "World":
+    config_dict = load_config()
+    config_validation(config_dict, global_db)
+
+    marketboard_type = config_dict["marketboard_type"]
+
+    if marketboard_type == "World":
         location = config_dict["world"]
-    elif config_dict["marketboard_type"] == "Datacentre" or config_dict["marketboard_type"] == "Datacenter":
+    elif marketboard_type == "Datacentre" or marketboard_type == "Datacenter":
         location = config_dict["datacentre"]
     else:
         print("Invalid Config MarketboardType Selection, Field should be one of Datacentre/Datacenter/World")
         exit()
-    db_name = os.path.join("databases", config_dict["marketboard_type"] + "_" + location)
+    market_db_name = os.path.join("databases", marketboard_type + "_" + location)
 
     try:
-        Db_Create(db_name)
+        Db_Create(market_db_name)
         print("New World or DC database created")
     except ValueError:
         print("World or DC Database already exists")
         pass
 
-    state_file = os.path.join("databases", "state_file")
-    try:
-        Db_Create(state_file)
-        print("New State File DB Created")
-    except ValueError:
-        print("State File Database already exists")
-        pass
-
-    state_db = SqlManager(db_name)
-    location_start = state_db.return_query(
-        f'SELECT start FROM location_state WHERE '
-        f'marketboard_type = {config_dict["marketboard_type"]} AND location = location'
+    selected_location_start_id = global_db.return_query(
+        f'SELECT LastId FROM state WHERE '
+        f'MarketboardType = {marketboard_type} AND Location = {location}'
     )
-    start = int(location_start[0])
 
-    location_db = SqlManager(db_name)
-    full_update(location_db, location, start)
-    profit_table(location_db, db_name, velocity=20)
-    # profit_table(db, db_name, velocity=3, recipeLvl=380)
+    if len(selected_location_start_id) > 0:
+        start_id = int(selected_location_start_id[0])
+    else:
+        start_id = 0
+        global_db.execute_query(
+            f'INSERT INTO state (MarketboardType, Location, LastId) '
+            f'VALUES("{marketboard_type}", "{location}", 0)'
+        )
+
+    location_db = SqlManager(market_db_name)
+    update_quantity = int(config_dict["update_quantity"])
+    update(location_db, location, start_id, update_quantity)
+    result_quantity = int(config_dict["result_quantity"])
+    profit_table(location_db, market_db_name, result_quantity, velocity=20)
+    # profit_table(db, db_name, velocity=3, recipe_lvl=380)
 
 
 # def calculated_column(conn):

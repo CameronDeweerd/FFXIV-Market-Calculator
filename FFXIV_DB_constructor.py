@@ -45,6 +45,12 @@ class FfxivDbCreation:
 
         self.db = SqlManager(db_name)
 
+        if db_name == os.path.join("databases", "global_db"):
+            self.global_db_create()
+        else:
+            self.market_db_create()
+
+    def market_db_create(self):
         # gets a list of integers in string format ['2','3','5','6',...]
         marketable_ids = self.get_marketable_ids()
         print('Got marketable ID list')
@@ -61,41 +67,17 @@ class FfxivDbCreation:
         recipes[1] = recipes[1].replace('#', 'CSVkey')
         print('Got raw recipe CSV')
 
-        # gets a list of tuples containing the datacentre data
-        datacentres = self.get_data_from_url(
-            'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/WorldDCGroupType.csv')
-        datacentres[1] = datacentres[1].replace('#', 'DCKey')
-        print('Got raw datacentre CSV')
-
-        # gets a list of tuples containing the world data
-        worlds = self.get_data_from_url(
-            'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/World.csv')
-        worlds[1] = worlds[1].replace('#', 'WorldKey')
-        print('got raw world CSV')
-
         marketable_items = filter_marketable_items(items, marketable_ids)
         print('item CSV filtered to only marketable')
 
         marketable_recipes = self.filter_marketable_recipes(recipes, marketable_ids)
         print('recipes CSV filtered to only marketable')
 
-        usable_datacentres = self.filter_datacentres(datacentres)
-        print('datacentres CSV filtered to only usable')
-
-        usable_worlds = self.filter_worlds(worlds)
-        print('worlds CSV filtered to only usable')
-
         self.csv_to_db(marketable_items, 'item')
         print('item table created')
 
         self.csv_to_db(marketable_recipes, 'recipe')
         print('recipe table created')
-
-        self.csv_to_db(usable_datacentres, 'datacentre')
-        print('datacentre table created')
-
-        self.csv_to_db(usable_worlds, 'world')
-        print('world table created')
 
         for i in range(10):
             self.db.execute_query(f"ALTER TABLE recipe ADD ingredientCost{i} INTEGER DEFAULT 0;")
@@ -116,6 +98,36 @@ class FfxivDbCreation:
 
         # TODO add the additional columns like:
         #  ave_cost,regSaleVelocity,ave_NQ_cost,nqSaleVelocity,ave_HQ_cost,hqSaleVelocity'
+
+    def global_db_create(self):
+        # gets a list of tuples containing the datacentre data
+        datacentres = self.get_data_from_url(
+            'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/WorldDCGroupType.csv')
+        datacentres[1] = datacentres[1].replace('#', 'DCKey')
+        print('Got raw datacentre CSV')
+
+        # gets a list of tuples containing the world data
+        worlds = self.get_data_from_url(
+            'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/World.csv')
+        worlds[1] = worlds[1].replace('#', 'WorldKey')
+        print('got raw world CSV')
+
+        usable_datacentres = self.filter_datacentres(datacentres)
+        print('datacentres CSV filtered to only usable')
+
+        usable_worlds = self.filter_worlds(worlds)
+        print('worlds CSV filtered to only usable')
+
+        state_table = self.base_state_table()
+        print('base state table data')
+
+        self.csv_to_db(usable_datacentres, 'datacentre')
+        print('datacentre table created')
+
+        self.csv_to_db(usable_worlds, 'world')
+        print('world table created')
+
+        self.csv_to_db(state_table, 'state')
 
     @staticmethod
     def get_data_from_url(url):
@@ -176,6 +188,8 @@ class FfxivDbCreation:
         usable_datacentres = datacentres[0:3]
         usable_datacentres[1] = 'DCKey,Name,Region'
         usable_datacentres[2] = 'INTEGER, STRING, INTEGER'
+        usable_datacentres[1] = tuple(usable_datacentres[1].split(','))
+        usable_datacentres[2] = tuple(usable_datacentres[2].split(','))
 
         for line in datacentres[3:]:
             split_line = line.split(',')
@@ -189,6 +203,8 @@ class FfxivDbCreation:
         usable_worlds = worlds[0:3]
         usable_worlds[1] = 'WorldKey, Name, DataCenter'
         usable_worlds[2] = 'INTEGER, STRING, INTEGER'
+        usable_worlds[1] = tuple(usable_worlds[1].split(','))
+        usable_worlds[2] = tuple(usable_worlds[2].split(','))
 
         for line in worlds:
             split_line = line.split(',')
@@ -198,6 +214,12 @@ class FfxivDbCreation:
                 split_line = split_line[0] + split_line[2] + split_line[5]
                 usable_worlds.append(tuple(split_line))
         return usable_worlds
+
+    @staticmethod
+    def base_state_table():
+        state = [tuple('None'), tuple('MarketboardType, Location, LastId'), tuple('STRING, STRING, INTEGER'),
+                 tuple('World, Zurvan, 0')]
+        return state
 
     # function used to convert original files into the DB
     def csv_to_db(self, csv_data, table_name):
