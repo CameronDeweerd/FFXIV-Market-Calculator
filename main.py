@@ -34,19 +34,27 @@ def config_validation(config_dict, global_db):
         print("Config Error: Marketboard Type is Unknown, this value should be World, Datacentre, or Datacenter")
         exit()
 
-    if config_dict["datacentre"] not in global_db.return_query(f'SELECT Name FROM datacentre'):
+    datacentre_data = global_db.return_query(f'SELECT Name FROM datacentre')
+    valid_datacentres = []
+    for item in datacentre_data:
+        valid_datacentres.append(item[0])
+    if config_dict["datacentre"] not in valid_datacentres:
         print("Config Error: Datacentre is not in Database, check config")
         exit()
 
-    if config_dict["world"] not in global_db.return_query(f'SELECT Name FROM world'):
+    world_data = global_db.return_query(f'SELECT Name FROM world')
+    valid_worlds = []
+    for item in world_data:
+        valid_worlds.append(item[0])
+    if config_dict["world"] not in valid_worlds:
         print("Config Error: World is not in Database, check config")
         exit()
 
-    if isinstance(config_dict["result_quantity"], int) and config_dict["result_quantity"] > 0:
+    if not isinstance(config_dict["result_quantity"], int) or config_dict["result_quantity"] == 0:
         print("Config Error: Result Quantity must be a whole number and greater than 0")
         exit()
 
-    if isinstance(config_dict["update_quantity"], int):
+    if not isinstance(config_dict["update_quantity"], int):
         print("Config Error: Update Quantity must be a whole number")
         exit()
 
@@ -148,18 +156,20 @@ def get_sale_data(item_number, location, entries=1000):
 def update_from_api(db, location, start_id, update_quantity):
     table_name = "item"
     if update_quantity == 0:
-        query = f"SELECT item_number FROM item WHERE item_number >= {start_id}"
+        query = f"SELECT itemNum FROM item WHERE itemNum >= {start_id}"
     else:
-        query = f"SELECT item_number FROM item WHERE item_number >= {start_id} " \
-                f"ORDER BY item_number ASC LIMIT {update_quantity}"
+        query = f"SELECT itemNum FROM item WHERE itemNum >= {start_id} " \
+                f"ORDER BY itemNum ASC LIMIT {update_quantity}"
+    print(query)
     data = db.return_query(query)
+    print(data)
 
     for item_number in data:
         api_delay_thread = threading.Thread(target=api_delay)
         api_delay_thread.start()
         dictionary, success = get_sale_nums(*item_number, location)
         if success == 1:
-            query = "UPDATE `{}` SET {} WHERE item_number = %s" % item_number
+            query = "UPDATE `{}` SET {} WHERE itemNum = %s" % item_number
             new_data_value = ', '.join(
                 ['`{}`="{}"'.format(column_name, value) for column_name, value in dictionary.items()])
             q = query.format(table_name, new_data_value)
@@ -177,7 +187,7 @@ def update_ingredient_costs(db):
         for num in numbers:
             ingredient_i_id = num[1]
             if not ingredient_i_id == 0:
-                ave_cost = db.return_query(f"SELECT ave_cost FROM item WHERE item_number = {ingredient_i_id}")
+                ave_cost = db.return_query(f"SELECT ave_cost FROM item WHERE itemNum = {ingredient_i_id}")
                 try:
                     ave_cost = ave_cost[0][0]
                 except IndexError:
@@ -197,9 +207,9 @@ def update_cost_to_craft(db):
         cost = db.return_query(f"SELECT costToCraft FROM recipe WHERE ItemResult = {num[0]}")
         try:
             cost = cost[0][0]
-            db.execute_query(f"UPDATE item SET costToCraft = {cost} WHERE item_number = {num[0]}")
+            db.execute_query(f"UPDATE item SET costToCraft = {cost} WHERE itemNum = {num[0]}")
         except IndexError:
-            db.execute_query(f"UPDATE item SET costToCraft = ave_cost WHERE item_number = {num[0]}")
+            db.execute_query(f"UPDATE item SET costToCraft = ave_cost WHERE itemNum = {num[0]}")
         if index % 100 == 0:
             print(f"{index}/{len(numbers)} updated")
 
@@ -216,7 +226,7 @@ def profit_table(db, db_name, result_quantity, velocity=10, recipe_lvl=1000):
     to_display = "name, craftProfit, regular_sale_velocity, ave_cost, costToCraft"
     level_limited_recipes = f"SELECT ItemResult FROM recipe WHERE RecipeLevelTable <={recipe_lvl}"
     x = db.return_query(
-        f"SELECT {to_display} FROM item WHERE regular_sale_velocity >= {velocity} AND item_number "
+        f"SELECT {to_display} FROM item WHERE regular_sale_velocity >= {velocity} AND itemNum "
         f"IN ({level_limited_recipes}) ORDER BY craftProfit DESC LIMIT {result_quantity}")
 
     frame = pd.DataFrame(x)
@@ -260,11 +270,11 @@ def main():
 
     selected_location_start_id = global_db.return_query(
         f'SELECT LastId FROM state WHERE '
-        f'MarketboardType = {marketboard_type} AND Location = {location}'
+        f'MarketboardType LIKE "{marketboard_type}" AND Location LIKE "{location}"'
     )
 
     if len(selected_location_start_id) > 0:
-        start_id = int(selected_location_start_id[0])
+        start_id = int(selected_location_start_id[0][0])
     else:
         start_id = 0
         global_db.execute_query(

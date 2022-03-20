@@ -194,8 +194,11 @@ class FfxivDbCreation:
         for line in datacentres[3:]:
             split_line = line.split(',')
             datacentre_id = int(split_line[0])
-            if datacentre_id >= 1 or datacentre_id < 99:
-                usable_datacentres.append(tuple(split_line))
+            unquoted_line = []
+            for item in split_line:
+                unquoted_line.append(item.replace('"', ''))
+            if 1 <= datacentre_id < 99:
+                usable_datacentres.append(tuple(unquoted_line))
         return usable_datacentres
 
     @staticmethod
@@ -206,19 +209,23 @@ class FfxivDbCreation:
         usable_worlds[1] = tuple(usable_worlds[1].split(','))
         usable_worlds[2] = tuple(usable_worlds[2].split(','))
 
-        for line in worlds:
+        for line in worlds[3:]:
             split_line = line.split(',')
             world_id = int(split_line[0])
             is_public = split_line[-1]
-            if is_public == 'TRUE' and world_id != 38:
-                split_line = split_line[0] + split_line[2] + split_line[5]
+            if is_public == 'True' and world_id != 38:
+                split_line = [split_line[0], split_line[2].replace('"', ''), split_line[5]]
                 usable_worlds.append(tuple(split_line))
         return usable_worlds
 
     @staticmethod
     def base_state_table():
-        state = [tuple('None'), tuple('MarketboardType, Location, LastId'), tuple('STRING, STRING, INTEGER'),
-                 tuple('World, Zurvan, 0')]
+        state = ['key,0,1', 'MarketboardType,Location,LastId', 'STRING,STRING,INTEGER', 'World,Zurvan,0']
+        state[0] = tuple(state[0].split(","))
+        state[1] = tuple(state[1].split(','))
+        state[2] = tuple(state[2].split(','))
+        state[3] = tuple(state[3].split(','))
+        print(state)
         return state
 
     # function used to convert original files into the DB
