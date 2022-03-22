@@ -7,8 +7,8 @@ import pathlib
 
 def filter_marketable_items(items, marketable_ids):
     marketable_items = [None, (
-        'itemNum', 'name', 'ave_cost', 'regSaleVelocity', 'ave_NQ_cost', 'nqSaleVelocity',
-        'ave_HQ_cost', 'hqSaleVelocity'), (
+        'item_num', 'name', 'ave_cost', 'regular_sale_velocity', 'ave_nq_cost', 'nq_sale_velocity',
+        'ave_hq_cost', 'hq_sale_velocity'), (
         'INTEGER', 'TEXT', 'INTEGER', 'REAL', 'INTEGER', 'REAL',
         'INTEGER', 'REAL')]
     line_concatenate = []
@@ -80,21 +80,21 @@ class FfxivDbCreation:
         print('recipe table created')
 
         for i in range(10):
-            self.db.execute_query(f"ALTER TABLE recipe ADD ingredientCost{i} INTEGER DEFAULT 0;")
+            self.db.execute_query(f"ALTER TABLE recipe ADD ingredient_cost_{i} INTEGER DEFAULT 0;")
 
         self.db.execute_query(
-            "ALTER TABLE recipe ADD costToCraft GENERATED ALWAYS AS ("
-            "AmountIngredient0 * ingredientCost0 + AmountIngredient1 * ingredientCost1 + "
-            "AmountIngredient2 * ingredientCost2 + AmountIngredient3 * ingredientCost3 + "
-            "AmountIngredient4 * ingredientCost4 + AmountIngredient5 * ingredientCost5 + "
-            "AmountIngredient6 * ingredientCost6 + AmountIngredient7 * ingredientCost7 + "
-            "AmountIngredient8 * ingredientCost8 + AmountIngredient9 * ingredientCost9)")
+            "ALTER TABLE recipe ADD cost_to_craft GENERATED ALWAYS AS ("
+            "amount_ingredient_0 * ingredient_cost_0 + amount_ingredient_1 * ingredient_cost_1 + "
+            "amount_ingredient_2 * ingredient_cost_2 + amount_ingredient_3 * ingredient_cost_3 + "
+            "amount_ingredient_4 * ingredient_cost_4 + amount_ingredient_5 * ingredient_cost_5 + "
+            "amount_ingredient_6 * ingredient_cost_6 + amount_ingredient_7 * ingredient_cost_7 + "
+            "amount_ingredient_8 * ingredient_cost_8 + amount_ingredient_9 * ingredient_cost_9)")
 
-        self.db.execute_query(f"ALTER TABLE item ADD costToCraft INTEGER DEFAULT 0;")
+        self.db.execute_query(f"ALTER TABLE item ADD cost_to_craft INTEGER DEFAULT 0;")
         # self.db.execute_query(
         #     f"ALTER TABLE item ADD costToCraft GENERATED ALWAYS AS (SELECT costToCraft
         #     FROM recipe WHERE ItemResult = itemNum LIMIT 1);")
-        self.db.execute_query(f"ALTER TABLE item ADD craftProfit GENERATED ALWAYS AS (ave_cost - costToCraft);")
+        self.db.execute_query(f"ALTER TABLE item ADD craft_profit GENERATED ALWAYS AS (ave_cost - cost_to_craft);")
 
         # TODO add the additional columns like:
         #  ave_cost,regSaleVelocity,ave_NQ_cost,nqSaleVelocity,ave_HQ_cost,hqSaleVelocity'
@@ -103,13 +103,13 @@ class FfxivDbCreation:
         # gets a list of tuples containing the datacentre data
         datacentres = self.get_data_from_url(
             'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/WorldDCGroupType.csv')
-        datacentres[1] = datacentres[1].replace('#', 'DCKey')
+        datacentres[1] = datacentres[1].replace('#', 'dc_key')
         print('Got raw datacentre CSV')
 
         # gets a list of tuples containing the world data
         worlds = self.get_data_from_url(
             'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/World.csv')
-        worlds[1] = worlds[1].replace('#', 'WorldKey')
+        worlds[1] = worlds[1].replace('#', 'world_key')
         print('got raw world CSV')
 
         usable_datacentres = self.filter_datacentres(datacentres)
@@ -154,24 +154,26 @@ class FfxivDbCreation:
     def filter_marketable_recipes(recipes, marketable_ids):
         marketable_recipes = recipes[0:3]
         marketable_recipes[
-            1] = 'CSVKey,Number,CraftType,RecipeLevelTable,ItemResult,AmountResult,ItemIngredient0,AmountIngredient0,' \
-                 'ItemIngredient1,AmountIngredient1,ItemIngredient2,AmountIngredient2,' \
-                 'ItemIngredient3,AmountIngredient3,ItemIngredient4,AmountIngredient4,' \
-                 'ItemIngredient5,AmountIngredient5,ItemIngredient6,AmountIngredient6,' \
-                 'ItemIngredient7,AmountIngredient7,ItemIngredient8,AmountIngredient8,' \
-                 'ItemIngredient9,AmountIngredient9,emptyColumn1,IsSecondary,MaterialQualityFactor,DifficultyFactor,' \
-                 'QualityFactor,DurabilityFactor,emptyColumn2,RequiredCraftsmanship,RequiredControl,' \
-                 'QuickSynthCraftsmanship,QuickSynthControl,SecretRecipeBook,Quest,CanQuickSynth,CanHq,ExpRewarded,' \
-                 'StatusRequired,ItemRequired,IsSpecializationRequired,IsExpert,PatchNumber'
+            1] = 'csv_key,number,craft_type,recipe_level_table,item_result,amount_result,' \
+                 'item_ingredient_0,amount_ingredient_0,item_ingredient_1,amount_ingredient_1,' \
+                 'item_ingredient_2,amount_ingredient_2,item_ingredient_3,amount_ingredient_3,' \
+                 'item_ingredient_4,amount_ingredient_4,item_ingredient_5,amount_ingredient_5,' \
+                 'item_ingredient_6,amount_ingredient_6,item_ingredient_7,amount_ingredient_7,' \
+                 'item_ingredient_8,amount_ingredient_8,item_ingredient_9,amount_ingredient_9,' \
+                 'empty_column_1,is_secondary,material_quality_factor,difficulty_factor,quality_factor,' \
+                 'durability_factor,empty_column_2,required_craftsmanship,required_control,quick_synth_craftsmanship,' \
+                 'quick_synth_control,secret_recipe_book,quest,can_quick_synth,can_hq,exp_rewarded,' \
+                 'status_required,item_required,is_specialization_required,is_expert,patch_number'
         marketable_recipes[
-            2] = 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
+            2] = 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
-                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
-                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
+                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER'
         marketable_recipes[1] = tuple(marketable_recipes[1].split(','))
         marketable_recipes[2] = tuple(marketable_recipes[2].split(','))
@@ -186,7 +188,7 @@ class FfxivDbCreation:
     @staticmethod
     def filter_datacentres(datacentres):
         usable_datacentres = datacentres[0:3]
-        usable_datacentres[1] = 'DCKey,Name,Region'
+        usable_datacentres[1] = 'dc_key,name,region'
         usable_datacentres[2] = 'INTEGER, STRING, INTEGER'
         usable_datacentres[1] = tuple(usable_datacentres[1].split(','))
         usable_datacentres[2] = tuple(usable_datacentres[2].split(','))
@@ -204,7 +206,7 @@ class FfxivDbCreation:
     @staticmethod
     def filter_worlds(worlds):
         usable_worlds = worlds[0:3]
-        usable_worlds[1] = 'WorldKey, Name, DataCenter'
+        usable_worlds[1] = 'world_key, name, datacenter'
         usable_worlds[2] = 'INTEGER, STRING, INTEGER'
         usable_worlds[1] = tuple(usable_worlds[1].split(','))
         usable_worlds[2] = tuple(usable_worlds[2].split(','))
@@ -220,7 +222,7 @@ class FfxivDbCreation:
 
     @staticmethod
     def base_state_table():
-        state = ['key,0,1', 'MarketboardType,Location,LastId', 'STRING,STRING,INTEGER', 'World,Zurvan,0']
+        state = ['key,0,1', 'marketboard_type,location,last_id', 'STRING,STRING NOT NULL UNIQUE,INTEGER', 'World,Zurvan,0']
         state[0] = tuple(state[0].split(","))
         state[1] = tuple(state[1].split(','))
         state[2] = tuple(state[2].split(','))

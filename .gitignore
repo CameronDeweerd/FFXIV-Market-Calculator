@@ -3,3 +3,4 @@ market_DB*
 venv/
 __pycache__
 databases/
+*.log
