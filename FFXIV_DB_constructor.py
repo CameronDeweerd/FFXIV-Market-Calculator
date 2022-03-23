@@ -9,7 +9,7 @@ def filter_marketable_items(items, marketable_ids):
     marketable_items = [None, (
         'item_num', 'name', 'ave_cost', 'regular_sale_velocity', 'ave_nq_cost', 'nq_sale_velocity',
         'ave_hq_cost', 'hq_sale_velocity'), (
-        'INTEGER', 'TEXT', 'INTEGER', 'REAL', 'INTEGER', 'REAL',
+        'INTEGER PRIMARY KEY', 'TEXT', 'INTEGER', 'REAL', 'INTEGER', 'REAL',
         'INTEGER', 'REAL')]
     line_concatenate = []
     for line in items[3:]:
@@ -165,7 +165,7 @@ class FfxivDbCreation:
                  'quick_synth_control,secret_recipe_book,quest,can_quick_synth,can_hq,exp_rewarded,' \
                  'status_required,item_required,is_specialization_required,is_expert,patch_number'
         marketable_recipes[
-            2] = 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
+            2] = 'INTEGER PRIMARY KEY,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
@@ -189,7 +189,7 @@ class FfxivDbCreation:
     def filter_datacentres(datacentres):
         usable_datacentres = datacentres[0:3]
         usable_datacentres[1] = 'dc_key,name,region'
-        usable_datacentres[2] = 'INTEGER, STRING, INTEGER'
+        usable_datacentres[2] = 'INTEGER PRIMARY KEY, STRING, INTEGER'
         usable_datacentres[1] = tuple(usable_datacentres[1].split(','))
         usable_datacentres[2] = tuple(usable_datacentres[2].split(','))
 
@@ -207,7 +207,7 @@ class FfxivDbCreation:
     def filter_worlds(worlds):
         usable_worlds = worlds[0:3]
         usable_worlds[1] = 'world_key, name, datacenter'
-        usable_worlds[2] = 'INTEGER, STRING, INTEGER'
+        usable_worlds[2] = 'INTEGER PRIMARY KEY, STRING, INTEGER'
         usable_worlds[1] = tuple(usable_worlds[1].split(','))
         usable_worlds[2] = tuple(usable_worlds[2].split(','))
 
