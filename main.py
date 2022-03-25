@@ -12,6 +12,9 @@ from FFXIV_DB_constructor import FfxivDbCreation as Db_Create
 from logging.handlers import RotatingFileHandler
 from SQLhelpers import SqlManager
 
+t0 = time.time()
+ffxiv_logger = logging.Logger
+
 
 class StreamToLogger(object):
     """
@@ -33,60 +36,87 @@ class StreamToLogger(object):
 def load_config():
     cfg = configparser.ConfigParser()
     cfg.read("config.ini")
-    marketboard_type = cfg["MAIN"].get('MarketboardType', 'world')
-    datacentre = cfg["MAIN"].get('Datacentre', 'Crystal')
-    world = cfg["MAIN"].get('World', 'Zalera')
-    result_quantity = cfg["MAIN"].getint('ResultQuantity', 50)
-    update_quantity = cfg["MAIN"].getint('UpdateQuantity', 0)
-    min_avg_sales_per_day = cfg["MAIN"].getint('MinAvgSalesPerDay', 20)
-    config_dict = {
-        "marketboard_type": marketboard_type.capitalize(),
-        "datacentre": datacentre.capitalize(),
-        "world": world.capitalize(),
-        "result_quantity": result_quantity,
-        "update_quantity": update_quantity,
-        "min_avg_sales_per_day": min_avg_sales_per_day
-    }
-    return config_dict
+    try:
+        config_dict = {
+            "marketboard_type": cfg["MAIN"].get('MarketboardType', 'World').capitalize(),
+            "datacentre": cfg["MAIN"].get('Datacentre', 'Crystal').capitalize(),
+            "world": cfg["MAIN"].get('World', 'Zalera').capitalize(),
+            "result_quantity": cfg["MAIN"].getint('ResultQuantity', 50),
+            "update_quantity": cfg["MAIN"].getint('UpdateQuantity', 0),
+            "min_avg_sales_per_day": cfg["MAIN"].getint('MinAvgSalesPerDay', 20),
+            "log_enable": cfg["LOGGING"].getboolean('LogEnable', False),
+            "log_level": cfg['LOGGING'].get('LogLevel', 'INFO'),
+            "log_mode": cfg['LOGGING'].get('LogMode', 'Write'),
+            "log_file": cfg['LOGGING'].get('LogFile', 'ffxiv_market_calculator.log')
+        }
+        return config_dict
+    except Exception as err:
+        print(f"Config Load Error: {err}")
+        exit()
 
 
 def config_validation(config_dict, global_db):
-
+    error_list = []
     if config_dict["marketboard_type"] not in ["World", "Datacentre", "Datacenter"]:
-        print("Config Error: Marketboard Type is Unknown, this value should be World, Datacentre, or Datacenter")
-        exit()
+        error_list.append("Config Error: Marketboard Type is Unknown, this value should be World, Datacentre, or Datacenter")
 
     datacentre_data = global_db.return_query(f'SELECT name FROM datacentre')
     valid_datacentres = []
     for item in datacentre_data:
         valid_datacentres.append(item[0])
     if config_dict["datacentre"] not in valid_datacentres:
-        print("Config Error: Datacentre is not in Database, check config")
-        exit()
+        error_list.append("Config Error: Datacentre is not in Database, check config")
 
     world_data = global_db.return_query(f'SELECT name FROM world')
     valid_worlds = []
     for item in world_data:
         valid_worlds.append(item[0])
     if config_dict["world"] not in valid_worlds:
-        print("Config Error: World is not in Database, check config")
-        exit()
+        error_list.append("Config Error: World is not in Database, check config")
 
     if not isinstance(config_dict["result_quantity"], int) or config_dict["result_quantity"] == 0:
-        print("Config Error: Result Quantity must be a whole number and greater than 0")
-        exit()
+        error_list.append("Config Error: Result Quantity must be a whole number and greater than 0")
 
     if not isinstance(config_dict["update_quantity"], int):
-        print("Config Error: Update Quantity must be a whole number")
-        exit()
+        error_list.append("Config Error: Update Quantity must be a whole number")
 
     if not isinstance(config_dict["min_avg_sales_per_day"], int) or config_dict["min_avg_sales_per_day"] == 0:
-        print("Config Error: Result Quantity must be a whole number and greater than 0")
+        error_list.append("Config Error: Result Quantity must be a whole number and greater than 0")
+
+    if not isinstance(config_dict["log_enable"], bool):
+        error_list.append("Config Error: Log Enable must be True or False")
+
+    if config_dict["log_level"] not in ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]:
+        error_list.append("Config Error: Log Level is not known, must be one of CRITICAL, ERROR, WARNING, INFO, DEBUG")
+
+    if config_dict["log_mode"] not in ["WRITE", "APPEND"]:
+        error_list.append("Config Error: Marketboard Type is Unknown, this value should be "
+                          "World, Datacentre, or Datacenter")
+
+    if len(error_list) > 0:
+        for error in error_list:
+            print(error)
         exit()
+
+
+def config_logging(config_dict):
+    global ffxiv_logger
+    if config_dict['log_enable']:
+        if config_dict['log_mode'] == "WRITE":
+            log_mode = 'w'
+        else:
+            log_mode = 'a'
+        logging.basicConfig(
+            level=logging.getLevelName(config_dict['log_level']),
+            format='%(asctime)s\t%(levelname)s\t\t%(name)s\t\t%(message)s',
+            filename=config_dict['log_file'],
+            filemode=log_mode
+        )
+    ffxiv_logger = logging.getLogger('ffxiv-market-calc')
 
 
 def api_delay():
-    time.sleep(0.15)  # API only allows 7 checks/sec.
+    time.sleep(0.06)  # API only allows 7 checks/sec.
 
 
 # gets the velocity and sale data and creates a dict with it
@@ -102,8 +132,14 @@ def get_sale_nums(item_number, location):
 
     data, r = get_sale_data(item_number, location)
     if r.status_code == 404 or not data:
-        print(f"item_number {*item_number,} found no data")
-        return sale_data, 0
+        try:
+            ffxiv_logger.info(f"item_number {*item_number,} found no data")
+        except TypeError:
+            ffxiv_logger.error(f"item_number {item_number} found no data")
+        except Exception as err:
+            ffxiv_logger.error(f"{err} w/ data pull")
+        finally:
+            return sale_data, 0
 
     try:
         if data["regularSaleVelocity"] > 142:
@@ -114,7 +150,7 @@ def get_sale_nums(item_number, location):
         if regular_sale_velocity == 0:
             return sale_data, 1
     except Exception as err:
-        print(f"{err} w/ item_number {item_number}")
+        ffxiv_logger.error(f"{err} w/ item_number {item_number}")
         return sale_data, 0
 
     sales = data["entries"]
@@ -198,17 +234,16 @@ def update_from_api(location_db, global_db, location, start_id, update_quantity)
                 ['`{}`="{}"'.format(column_name, value) for column_name, value in dictionary.items()])
             q = query.format(table_name, new_data_value)
             location_db.execute_query(q)
-            print(f"item_number {*item_number,} updated")
+            ffxiv_logger.info(f"item_number {*item_number,} updated")
             update_state_query = f'UPDATE state SET last_id = %i WHERE location LIKE "{location}"' % item_number
             global_db.execute_query(update_state_query)
         api_delay_thread.join()
-
-    print("All Sale Data Added to Database")
 
 
 # updates the ingredientCost values 0-9 for the recipe table
 def update_ingredient_costs(location_db):
     for i in range(10):
+        update_list = []
         numbers = location_db.return_query(f"SELECT number, item_ingredient_{i} FROM recipe")
         for num in numbers:
             ingredient_i_id = num[1]
@@ -222,29 +257,40 @@ def update_ingredient_costs(location_db):
                     ave_cost = 9999999
             else:
                 ave_cost = 0
-            location_db.execute_query(f"UPDATE recipe SET ingredient_cost_{i} = {ave_cost} WHERE number = {num[0]}")
-        print(f"ingredient_cost_{i} complete")
+            update_list.append(tuple((ave_cost, num[0])))
+        location_db.execute_query_many(f"UPDATE recipe SET ingredient_cost_{i} = ? WHERE number = ?", update_list)
+        ffxiv_logger.info(f"ingredient_cost_{i} updated")
 
 
 # copies over the cost to craft data from recipes
 def update_cost_to_craft(location_db):
+    update_cost_change = []
+    update_cost_is_ave = []
     numbers = location_db.return_query("SELECT * FROM item")
     for index, num in enumerate(numbers):
         cost = location_db.return_query(f"SELECT cost_to_craft FROM recipe WHERE item_result = {num[0]}")
         try:
             cost = cost[0][0]
-            location_db.execute_query(f"UPDATE item SET cost_to_craft = {cost} WHERE item_num = {num[0]}")
+            update_cost_change.append(tuple((cost, num[0])))
         except IndexError:
-            location_db.execute_query(f"UPDATE item SET cost_to_craft = ave_cost WHERE item_num = {num[0]}")
+            update_cost_is_ave.append(tuple((num[0],)))
         if index % 100 == 0:
-            print(f"{index}/{len(numbers)} updated")
+            ffxiv_logger.info(f"{index}/{len(numbers)} queued for update")
+    location_db.execute_query_many(f"UPDATE item SET cost_to_craft = ? WHERE item_num = ?", update_cost_change)
+    location_db.execute_query_many(f"UPDATE item SET cost_to_craft = ave_cost WHERE item_num = ?", update_cost_is_ave)
 
 
 # pulls data from the API, and performs all required calculations on it.
 def update(location_db, global_db, location, start_id, update_quantity):
     update_from_api(location_db, global_db, location, start_id, update_quantity)
+    ffxiv_logger.info("Sales Data Added to Database")
+    print("Sales Data Added to Database")
     update_ingredient_costs(location_db)
+    ffxiv_logger.info("Ingredient Costs Updated")
+    print("Ingredient Costs Updated")
     update_cost_to_craft(location_db)
+    ffxiv_logger.info("Cost to Craft Updated")
+    print("Cost to Craft Updated")
 
 
 def profit_table(location_db, db_name, result_quantity, velocity=10, recipe_lvl=1000):
@@ -264,18 +310,6 @@ def profit_table(location_db, db_name, result_quantity, velocity=10, recipe_lvl=
 
 
 def main():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s:%(levelname)s:%(name)s:%(message)s',
-        filename='ffxiv_market_calculator.log',
-        filemode='a'
-    )
-    log = logging.getLogger('foobar')
-    handler = RotatingFileHandler('ffxiv_market_calculator.log', maxBytes=200000000, backupCount=5)
-    log.addHandler(handler)
-    sys.stdout = StreamToLogger(log, logging.INFO)
-    sys.stderr = StreamToLogger(log, logging.ERROR)
-
     global_db_path = os.path.join("databases", "global_db")
     try:
         Db_Create(global_db_path)
@@ -287,6 +321,10 @@ def main():
 
     config_dict = load_config()
     config_validation(config_dict, global_db)
+    config_logging(config_dict)
+    if config_dict['log_enable']:
+        print("Config loaded with logging enabled, logging to file from now")
+    sys.stderr = StreamToLogger(ffxiv_logger, logging.ERROR)
 
     marketboard_type = config_dict["marketboard_type"]
     min_avg_sales_per_day = config_dict["min_avg_sales_per_day"]
@@ -295,16 +333,13 @@ def main():
         location = config_dict["world"]
     elif marketboard_type == "Datacentre" or marketboard_type == "Datacenter":
         location = config_dict["datacentre"]
-    else:
-        print("Invalid Config MarketboardType Selection, Field should be one of Datacentre/Datacenter/World")
-        exit()
     market_db_name = os.path.join("databases", marketboard_type + "_" + location)
 
     try:
         Db_Create(market_db_name)
-        print("New World or DC database created")
+        ffxiv_logger.info("New World or DC database created")
     except ValueError:
-        print("World or DC Database already exists")
+        ffxiv_logger.info("World or DC Database already exists")
         pass
 
     selected_location_start_id = global_db.return_query(
@@ -320,10 +355,14 @@ def main():
             f'INSERT INTO state (marketboard_type, location, last_id) '
             f'VALUES("{marketboard_type}", "{location}", 0)'
         )
-
     location_db = SqlManager(market_db_name)
     update_quantity = int(config_dict["update_quantity"])
     update(location_db, global_db, location, start_id, update_quantity)
+    if update_quantity == 0:
+        global_db.execute_query(
+            f'UPDATE state SET last_id = 0 WHERE'
+            f'marketboard_type LIKE "{marketboard_type}" AND location LIKE "{location}'
+        )
     result_quantity = int(config_dict["result_quantity"])
     profit_table(location_db, market_db_name, result_quantity, min_avg_sales_per_day)
     # profit_table(db, db_name, velocity=3, recipe_lvl=380)
