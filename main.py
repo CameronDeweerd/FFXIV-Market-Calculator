@@ -1,18 +1,20 @@
-import configparser
+import ast
 import json
 import logging
+import math
 import os
-import pandas as pd
-import requests
 import sys
 import threading
 import time
+from datetime import datetime
+
+import configparser
+import pandas as pd
+import requests
 
 from FFXIV_DB_constructor import FfxivDbCreation as Db_Create
-from logging.handlers import RotatingFileHandler
 from SQLhelpers import SqlManager
 
-t0 = time.time()
 ffxiv_logger = logging.Logger
 
 
@@ -47,7 +49,11 @@ def load_config():
             "log_enable": cfg["LOGGING"].getboolean('LogEnable', False),
             "log_level": cfg['LOGGING'].get('LogLevel', 'INFO'),
             "log_mode": cfg['LOGGING'].get('LogMode', 'Write'),
-            "log_file": cfg['LOGGING'].get('LogFile', 'ffxiv_market_calculator.log')
+            "log_file": cfg['LOGGING'].get('LogFile', 'ffxiv_market_calculator.log'),
+            "discord_enable": cfg["DISCORD"].getboolean('DiscordEnable', False),
+            "discord_id": os.getenv('DISCORDID'),
+            "discord_token": os.getenv('DISCORDTOKEN'),
+            "message_ids": ast.literal_eval(cfg['DISCORD'].get('MessageIds'))
         }
         return config_dict
     except Exception as err:
@@ -58,7 +64,8 @@ def load_config():
 def config_validation(config_dict, global_db):
     error_list = []
     if config_dict["marketboard_type"] not in ["World", "Datacentre", "Datacenter"]:
-        error_list.append("Config Error: Marketboard Type is Unknown, this value should be World, Datacentre, or Datacenter")
+        error_list.append("Config Error: Marketboard Type is Unknown, this value should be "
+                          "World, Datacentre, or Datacenter")
 
     datacentre_data = global_db.return_query(f'SELECT name FROM datacentre')
     valid_datacentres = []
@@ -85,13 +92,24 @@ def config_validation(config_dict, global_db):
 
     if not isinstance(config_dict["log_enable"], bool):
         error_list.append("Config Error: Log Enable must be True or False")
+    else:
+        if config_dict["log_level"] not in ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]:
+            error_list.append("Config Error: Log Level is not known, must be one of CRITICAL, ERROR, WARNING, INFO, DEBUG")
 
-    if config_dict["log_level"] not in ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]:
-        error_list.append("Config Error: Log Level is not known, must be one of CRITICAL, ERROR, WARNING, INFO, DEBUG")
+        if config_dict["log_mode"] not in ["WRITE", "APPEND"]:
+            error_list.append("Config Error: Marketboard Type is Unknown, this value should be "
+                              "World, Datacentre, or Datacenter")
 
-    if config_dict["log_mode"] not in ["WRITE", "APPEND"]:
-        error_list.append("Config Error: Marketboard Type is Unknown, this value should be "
-                          "World, Datacentre, or Datacenter")
+    if not isinstance(config_dict["discord_enable"], bool):
+        error_list.append("Config Error: Discord Enable must be True or False")
+    elif (
+            not config_dict["discord_id"] or
+            not config_dict["discord_token"] or
+            not isinstance(config_dict["discord_id"], str) or
+            not isinstance(config_dict["discord_token"], str)
+    ):
+        error_list.append("Config Error: if Discord is enabled then environment variables DISCORDID and "
+                          "DISCORDTOKEN must be set to the appropriate values for your Webhook")
 
     if len(error_list) > 0:
         for error in error_list:
@@ -116,7 +134,7 @@ def config_logging(config_dict):
 
 
 def api_delay():
-    time.sleep(0.06)  # API only allows 7 checks/sec.
+    time.sleep(0.06)  # API only allows 20 checks/sec.
 
 
 # gets the velocity and sale data and creates a dict with it
@@ -147,7 +165,7 @@ def get_sale_nums(item_number, location):
         regular_sale_velocity = round(data["regularSaleVelocity"], 1)
         nq_sale_velocity = round(data["nqSaleVelocity"], 1)
         hq_sale_velocity = round(data["hqSaleVelocity"], 1)
-        if regular_sale_velocity == 0:
+        if math.ceil(regular_sale_velocity) == 0:
             return sale_data, 1
     except Exception as err:
         ffxiv_logger.error(f"{err} w/ item_number {item_number}")
@@ -205,7 +223,7 @@ def get_sale_nums(item_number, location):
 
 
 # Calls the Universalis API and returns the data and the status code
-def get_sale_data(item_number, location, entries=1000):
+def get_sale_data(item_number, location, entries=5000):
     r = requests.get(f'https://universalis.app/api/history/{location}/{item_number}?entries={entries}')
     try:
         data = json.loads(r.content.decode('utf-8'))
@@ -216,6 +234,8 @@ def get_sale_data(item_number, location, entries=1000):
 
 # puts the data from the Universalis API into the db
 def update_from_api(location_db, global_db, location, start_id, update_quantity):
+    last_id = location_db.return_query('SELECT item_num FROM item ORDER BY item_num DESC LIMIT 1')
+    last_item = int(last_id[0][0])
     table_name = "item"
     if update_quantity == 0:
         query = f"SELECT item_num FROM item WHERE item_num >= {start_id}"
@@ -224,20 +244,23 @@ def update_from_api(location_db, global_db, location, start_id, update_quantity)
                 f"ORDER BY item_num ASC LIMIT {update_quantity}"
     data = location_db.return_query(query)
 
+    update_list = []
     for item_number in data:
         api_delay_thread = threading.Thread(target=api_delay)
         api_delay_thread.start()
         dictionary, success = get_sale_nums(*item_number, location)
         if success == 1:
-            query = "UPDATE `{}` SET {} WHERE item_num = %s" % item_number
-            new_data_value = ', '.join(
-                ['`{}`="{}"'.format(column_name, value) for column_name, value in dictionary.items()])
-            q = query.format(table_name, new_data_value)
-            location_db.execute_query(q)
-            ffxiv_logger.info(f"item_number {*item_number,} updated")
-            update_state_query = f'UPDATE state SET last_id = %i WHERE location LIKE "{location}"' % item_number
-            global_db.execute_query(update_state_query)
+            dictionary['item_num'] = item_number[0]
+            update_list.append(tuple((dictionary.values())))
+            ffxiv_logger.info(f"item_number {*item_number,} queued for update")
+            if item_number[0] == last_item:
+                global_db.execute_query(f'UPDATE state SET last_id = 0 WHERE location LIKE "{location}"')
+            else:
+                global_db.execute_query(f'UPDATE state SET last_id = %i WHERE location LIKE "{location}"' % item_number)
         api_delay_thread.join()
+    location_db.execute_query_many(f"UPDATE item SET regular_sale_velocity = ?, nq_sale_velocity = ?, "
+                                   f"hq_sale_velocity = ?, ave_nq_cost = ?, ave_hq_cost = ?, ave_cost = ? "
+                                   f"WHERE item_num = ?", update_list)
 
 
 # updates the ingredientCost values 0-9 for the recipe table
@@ -295,18 +318,43 @@ def update(location_db, global_db, location, start_id, update_quantity):
 
 def profit_table(location_db, db_name, result_quantity, velocity=10, recipe_lvl=1000):
     print("\n\n")
-    to_display = "name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft"
+    to_display = ["Name", "Profit", "Avg-Sales", "Avg-Cost", "Avg-Cft-Cost"]
+    to_sql = "name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft"
     level_limited_recipes = f"SELECT item_result FROM recipe WHERE recipe_level_table <={recipe_lvl}"
     x = location_db.return_query(
-        f"SELECT {to_display} FROM item WHERE regular_sale_velocity >= {velocity} AND item_num "
-        f"IN ({level_limited_recipes}) ORDER BY craft_profit DESC LIMIT {result_quantity}")
+        f"SELECT {to_sql} FROM item WHERE "
+        f"regular_sale_velocity >= {velocity} AND item_num IN ({level_limited_recipes}) "
+        f"ORDER BY craft_profit DESC LIMIT {result_quantity}")
 
     frame = pd.DataFrame(x)
-    print(f"             Data from {db_name} showing items w/ {velocity} or more daily sales")
+    print(f"             Data from {db_name} w/ {velocity} or more daily sales")
     print(f"        _____________________________________________________________________________")
     frame.style.set_caption("Hello World")
-    frame.columns = [to_display.split(", ")]
-    print(frame.to_string(index=False))
+    frame.columns = to_display
+    print(frame.to_string(index=False).replace('"', ''))
+
+
+def discord_webhook(config_dict, location_db, location):
+    webhook_base = f"https://discord.com/api/webhooks/{config_dict['discord_id']}/{config_dict['discord_token']}" \
+                   f"/messages/"
+    message_header = f"**Data from {location} > 2 avg daily sales @ {datetime.now().strftime('%d/%m/%Y %H:%M')}**\n```"
+    message_footer = f"```"
+    to_display = ["Name", "Profit", "Avg-Sales", "Avg-Cost", "Avg-Cft-Cost"]
+    to_sql = "name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft"
+    limit = 20
+    offset = 0
+    level_limited_recipes = f"SELECT item_result FROM recipe WHERE recipe_level_table <= 1000"
+    for message_id in config_dict['message_ids']:
+        results = location_db.return_query(
+            f"SELECT {to_sql} FROM item WHERE "
+            f"regular_sale_velocity >= {config_dict['min_avg_sales_per_day']} AND item_num IN "
+            f"({level_limited_recipes}) ORDER BY craft_profit DESC LIMIT {limit} OFFSET {offset}")
+        frame = pd.DataFrame(results)
+        frame.columns = to_display
+        message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
+        requests.patch(webhook_base + str(message_id), json.dumps({"content": message}),
+                       headers={'content-type': 'application/json'})
+        offset += 10
 
 
 def main():
@@ -360,11 +408,13 @@ def main():
     update(location_db, global_db, location, start_id, update_quantity)
     if update_quantity == 0:
         global_db.execute_query(
-            f'UPDATE state SET last_id = 0 WHERE'
-            f'marketboard_type LIKE "{marketboard_type}" AND location LIKE "{location}'
+            f'UPDATE state SET last_id = 0 WHERE '
+            f'marketboard_type LIKE "{marketboard_type}" AND location LIKE "{location}"'
         )
     result_quantity = int(config_dict["result_quantity"])
     profit_table(location_db, market_db_name, result_quantity, min_avg_sales_per_day)
+    if config_dict['discord_enable']:
+        discord_webhook(config_dict, location_db, location)
     # profit_table(db, db_name, velocity=3, recipe_lvl=380)
 
 
