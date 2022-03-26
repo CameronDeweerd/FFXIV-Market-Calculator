@@ -2,18 +2,18 @@
 import sqlite3
 
 
-class SQL_manager():
+class SqlManager:
     def __init__(self, db_name):
         self.db = db_name
-        self.SQL_connect().close()  # opens and closes a connection to create a new DB if it doesn't exist
+        self.sql_connect().close()  # opens and closes a connection to create a new DB if it doesn't exist
 
-    def SQL_connect(self):
+    def sql_connect(self):
         connection = sqlite3.connect(self.db)
         return connection
 
     # Helper function for SQL execution when returns are unneeded
     def execute_query(self, query, options=[]):
-        connection = self.SQL_connect()
+        connection = self.sql_connect()
         cursor = connection.cursor()
         try:
             if len(options) == 0:
@@ -29,7 +29,7 @@ class SQL_manager():
 
     # Helper function for SQL execution when returns are unneeded
     def execute_query_many(self, query, options=[]):
-        connection = self.SQL_connect()
+        connection = self.sql_connect()
         cursor = connection.cursor()
         try:
             if len(options) == 0:
@@ -45,7 +45,7 @@ class SQL_manager():
 
     # Helper function for SQL execution when returns are needed
     def return_query(self, query, options=[]):
-        connection = self.SQL_connect()
+        connection = self.sql_connect()
         cursor = connection.cursor()
         try:
             if len(options) == 0:
