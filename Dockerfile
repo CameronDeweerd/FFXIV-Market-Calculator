@@ -5,7 +5,7 @@ WORKDIR /usr/src/app
 COPY requirements.txt ./
 
 RUN apt update -y && apt install --no-install-recommends -y sqlite3 && \
-    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
 
 ENV LC_ALL=C
 ENV DISCORDID=PLACEHOLDER
