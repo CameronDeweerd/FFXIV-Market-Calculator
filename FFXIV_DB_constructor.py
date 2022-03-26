@@ -1,8 +1,10 @@
-from SQLhelpers import SqlManager
-import requests
-import sys
 import os
 import pathlib
+import sys
+
+import requests
+
+from SQLhelpers import SqlManager
 
 
 def filter_marketable_items(items, marketable_ids):
