@@ -2,5 +2,5 @@ market_DB*
 .idea/
 venv/
 __pycache__
-databases/
+databases/*
 *.log

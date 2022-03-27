@@ -103,10 +103,12 @@ def config_validation(config_dict, global_db):
     if not isinstance(config_dict["discord_enable"], bool):
         error_list.append("Config Error: Discord Enable must be True or False")
     elif (
-            not config_dict["discord_id"] or
-            not config_dict["discord_token"] or
-            not isinstance(config_dict["discord_id"], str) or
-            not isinstance(config_dict["discord_token"], str)
+            config_dict["discord_enable"] and (
+                not config_dict["discord_id"] or
+                not config_dict["discord_token"] or
+                not isinstance(config_dict["discord_id"], str) or
+                not isinstance(config_dict["discord_token"], str)
+            )
     ):
         error_list.append("Config Error: if Discord is enabled then environment variables DISCORDID and "
                           "DISCORDTOKEN must be set to the appropriate values for your Webhook")
