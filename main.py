@@ -94,7 +94,8 @@ def config_validation(config_dict, global_db):
         error_list.append("Config Error: Log Enable must be True or False")
     else:
         if config_dict["log_level"] not in ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]:
-            error_list.append("Config Error: Log Level is not known, must be one of CRITICAL, ERROR, WARNING, INFO, DEBUG")
+            error_list.append("Config Error: Log Level is not known, must be one of "
+                              "CRITICAL, ERROR, WARNING, INFO, DEBUG")
 
         if config_dict["log_mode"] not in ["WRITE", "APPEND"]:
             error_list.append("Config Error: Marketboard Type is Unknown, this value should be "
@@ -191,7 +192,8 @@ def get_sale_nums(item_number, location):
                     else:
                         total_hq_cost += sale["pricePerUnit"] * sale["quantity"]
                         total_hq_sales += sale["quantity"]
-            except:
+            except Exception as err:
+                ffxiv_logger.warning(err)
                 return sale_data, 1
         else:
             break
@@ -230,7 +232,8 @@ def get_sale_data(item_number, location, entries=5000):
     try:
         data = json.loads(r.content.decode('utf-8'))
         return data, r
-    except:
+    except Exception as err:
+        ffxiv_logger.error(err)
         return None, r
 
 
@@ -238,7 +241,6 @@ def get_sale_data(item_number, location, entries=5000):
 def update_from_api(location_db, global_db, location, start_id, update_quantity):
     last_id = location_db.return_query('SELECT item_num FROM item ORDER BY item_num DESC LIMIT 1')
     last_item = int(last_id[0][0])
-    table_name = "item"
     if update_quantity == 0:
         query = f"SELECT item_num FROM item WHERE item_num >= {start_id}"
     else:
@@ -379,10 +381,12 @@ def main():
     marketboard_type = config_dict["marketboard_type"]
     min_avg_sales_per_day = config_dict["min_avg_sales_per_day"]
 
-    if marketboard_type == "World":
-        location = config_dict["world"]
-    elif marketboard_type == "Datacentre" or marketboard_type == "Datacenter":
-        location = config_dict["datacentre"]
+    location_switch = {
+        "World": config_dict["world"],
+        "Datacentre": config_dict["datacentre"],
+        "Datacenter": config_dict["datacentre"]
+    }
+    location = location_switch.get(marketboard_type, 'World')
     market_db_name = os.path.join("databases", marketboard_type + "_" + location)
 
     try:
