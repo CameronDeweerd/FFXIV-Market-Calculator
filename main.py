@@ -217,27 +217,40 @@ def update(location_db, location, start_id, update_quantity):
     print("Cost to Craft Updated")
 
 
-def profit_table(location_db, db_name, result_quantity, velocity=10, recipe_lvl=1000):
+def profit_table(location_db, location, result_quantity, velocity=10, recipe_lvl=1000, no_craft=False):
     print("\n\n")
     to_display = ["Name", "Profit", "Avg-Sales", "Avg-Cost", "Avg-Cft-Cost"]
     to_sql = "name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft"
     level_limited_recipes = f"SELECT item_result FROM recipe WHERE recipe_level_table <={recipe_lvl}"
-    x = location_db.return_query(
-        f"SELECT {to_sql} FROM item WHERE "
-        f"regular_sale_velocity >= {velocity} AND item_num IN ({level_limited_recipes}) "
-        f"ORDER BY craft_profit DESC LIMIT {result_quantity}")
+    if not no_craft:
+        x = location_db.return_query(
+            f"SELECT {to_sql} FROM item WHERE "
+            f"regular_sale_velocity >= {velocity} AND item_num IN ({level_limited_recipes}) "
+            f"ORDER BY craft_profit DESC LIMIT {result_quantity}")
+        header = f"             Data from {location} w/ {velocity} or more daily sales"
+    else:
+        x = location_db.return_query(
+            f"SELECT {to_sql} FROM item WHERE "
+            f"regular_sale_velocity >= {velocity} AND item_num IN ({level_limited_recipes}) "
+            f"ORDER BY ave_cost DESC LIMIT {result_quantity}")
+        header = f"        Data from {location} w/ {velocity} or more daily sales (Ignore Craft Cost)"
 
     frame = pd.DataFrame(x)
-    print(f"             Data from {db_name} w/ {velocity} or more daily sales")
+    print(header)
     print(f"        _____________________________________________________________________________")
     frame.style.set_caption("Hello World")
     frame.columns = to_display
     print(frame.to_string(index=False).replace('"', ''))
 
 
-def discord_webhook(main_config, discord_config, location_db, location):
+def discord_webhook(main_config, discord_config, location_db, location, no_craft=False):
     discord = DiscordHandler(discord_config, logging_config)
-    message_header = f"**Data from {location} > 2 avg daily sales @ {datetime.now().strftime('%d/%m/%Y %H:%M')}**\n```"
+    if not no_craft:
+        message_header = f"**Data from {location} > 2 avg daily sales @ " \
+                         f"{datetime.now().strftime('%d/%m/%Y %H:%M')}**\n```"
+    else:
+        message_header = f"**Data from {location} > 2 avg daily sales (No Craft Cost) @ " \
+                         f"{datetime.now().strftime('%d/%m/%Y %H:%M')}**\n```"
     message_footer = f"```"
     to_display = ["Name", "Profit", "Avg-Sales", "Avg-Cost", "Avg-Cft-Cost"]
     to_sql = "name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft"
@@ -246,15 +259,21 @@ def discord_webhook(main_config, discord_config, location_db, location):
     level_limited_recipes = f"SELECT item_result FROM recipe WHERE recipe_level_table <= 1000"
 
     if len(discord_config['message_ids']) == 0:
-        results = location_db.return_query(
-            f"SELECT {to_sql} FROM item WHERE "
-            f"regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND item_num IN "
-            f"({level_limited_recipes}) ORDER BY craft_profit DESC LIMIT 20")
+        if not no_craft:
+            results = location_db.return_query(
+                f"SELECT {to_sql} FROM item WHERE "
+                f"regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND item_num IN "
+                f"({level_limited_recipes}) ORDER BY craft_profit DESC LIMIT 20")
+        else:
+            results = location_db.return_query(
+                f"SELECT {to_sql} FROM item WHERE "
+                f"regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND item_num IN "
+                f"({level_limited_recipes}) ORDER BY ave_cost DESC LIMIT 20")
         frame = pd.DataFrame(results)
         frame.columns = to_display
         message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
         discord.discord_message_create(message)
-    else:
+    elif not no_craft:
         for message_id in discord_config['message_ids']:
             results = location_db.return_query(
                 f"SELECT {to_sql} FROM item WHERE "
@@ -265,6 +284,52 @@ def discord_webhook(main_config, discord_config, location_db, location):
             message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
             discord.discord_message_update(message_id, message)
             offset += 10
+    elif no_craft:
+        if len(discord_config['message_ids']) > 1:
+            message_ids_middle = len(discord_config['message_ids']) // 2
+            for message_id in discord_config['message_ids'][:message_ids_middle]:
+                results = location_db.return_query(
+                    f"SELECT {to_sql} FROM item WHERE "
+                    f"regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND item_num IN "
+                    f"({level_limited_recipes}) ORDER BY craft_profit DESC LIMIT {limit} OFFSET {offset}")
+                frame = pd.DataFrame(results)
+                frame.columns = to_display
+                message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
+                discord.discord_message_update(message_id, message)
+                offset += 10
+
+            offset = 0
+            for message_id in discord_config['message_ids'][message_ids_middle:]:
+                results = location_db.return_query(
+                    f"SELECT {to_sql} FROM item WHERE "
+                    f"regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND item_num IN "
+                    f"({level_limited_recipes}) ORDER BY ave_cost DESC LIMIT {limit} OFFSET {offset}")
+                frame = pd.DataFrame(results)
+                frame.columns = to_display
+                message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
+                discord.discord_message_update(message_id, message)
+                offset += 10
+
+        elif len(discord_config['message_ids']) == 1:
+            for message_id in discord_config['message_ids']:
+                results = location_db.return_query(
+                    f"SELECT {to_sql} FROM item WHERE "
+                    f"regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND item_num IN "
+                    f"({level_limited_recipes}) ORDER BY craft_profit DESC LIMIT {limit} OFFSET {offset}")
+                frame = pd.DataFrame(results)
+                frame.columns = to_display
+                message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
+                discord.discord_message_update(message_id, message)
+                offset += 10
+
+            results = location_db.return_query(
+                f"SELECT {to_sql} FROM item WHERE "
+                f"regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND item_num IN "
+                f"({level_limited_recipes}) ORDER BY ave_cost DESC LIMIT {limit}")
+            frame = pd.DataFrame(results)
+            frame.columns = to_display
+            message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
+            discord.discord_message_create(message)
 
 
 def main():
@@ -273,6 +338,7 @@ def main():
     result_quantity = int(main_config["result_quantity"])
     update_quantity = int(main_config["update_quantity"])
     min_avg_sales_per_day = main_config["min_avg_sales_per_day"]
+    display_without_craft_cost = main_config["display_without_craft_cost"]
     location_switch = {
         "World": main_config["world"],
         "Datacentre": main_config["datacentre"],
@@ -310,11 +376,13 @@ def main():
             f'marketboard_type LIKE "{marketboard_type}" AND location LIKE "{location}"'
         )
 
-    profit_table(location_db, market_db_name, result_quantity, min_avg_sales_per_day)
+    profit_table(location_db, location, result_quantity, min_avg_sales_per_day)
+    if display_without_craft_cost:
+        profit_table(location_db, location, result_quantity, min_avg_sales_per_day, no_craft=display_without_craft_cost)
 
     discord_config = config.parse_discord_config()
     if discord_config['discord_enable']:
-        discord_webhook(main_config, discord_config, location_db, location)
+        discord_webhook(main_config, discord_config, location_db, location, no_craft=display_without_craft_cost)
     else:
         ffxiv_logger.info('Discord Disabled in Config')
 

@@ -27,6 +27,7 @@ class ConfigHandler:
         self.parser['MAIN']['ResultQuantity'] = '50'
         self.parser['MAIN']['UpdateQuantity'] = '0'
         self.parser['MAIN']['MinAvgSalesPerDay'] = '20'
+        self.parser["MAIN"]['DisplayWithoutCraftCost'] = 'False'
 
         self.parser.add_section('LOGGING')
         self.parser['LOGGING']['LogEnable'] = 'True'
@@ -50,7 +51,8 @@ class ConfigHandler:
                 "world": self.parser["MAIN"].get('World', 'Zalera').capitalize(),
                 "result_quantity": self.parser["MAIN"].getint('ResultQuantity', 50),
                 "update_quantity": self.parser["MAIN"].getint('UpdateQuantity', 0),
-                "min_avg_sales_per_day": self.parser["MAIN"].getint('MinAvgSalesPerDay', 20)
+                "min_avg_sales_per_day": self.parser["MAIN"].getint('MinAvgSalesPerDay', 20),
+                "display_without_craft_cost": self.parser["MAIN"].getboolean('DisplayWithoutCraftCost', False)
             }
         except Exception as err:
             self.ffxiv_logger.error(f"MAIN Config was invalid, setting back to defaults: {err}")
@@ -61,6 +63,7 @@ class ConfigHandler:
             self.parser["MAIN"]['ResultQuantity'] = '50'
             self.parser["MAIN"]['UpdateQuantity'] = '0'
             self.parser["MAIN"]['MinAvgSalesPerDay'] = '20'
+            self.parser["MAIN"]['DisplayWithoutCraftCost'] = 'False'
             with open(self.configfile, 'w') as configfile:
                 self.parser.write(configfile)
 
@@ -70,7 +73,8 @@ class ConfigHandler:
                 "world": 'Zalera',
                 "result_quantity": 50,
                 "update_quantity": 0,
-                "min_avg_sales_per_day": 20
+                "min_avg_sales_per_day": 20,
+                "display_without_craft_cost": False
             }
         self.main_validation()
         self.ffxiv_logger.info("Main Config Loaded")
@@ -138,13 +142,14 @@ class ConfigHandler:
             valid_worlds.append(world[0])
 
         if (
-                self.config["marketboard_type"] not in ["World", "Datacentre", "Datacenter"] or
-                self.config["datacentre"] not in valid_datacentres or
-                self.config["world"] not in valid_worlds or
-                not isinstance(self.config["result_quantity"], int) or self.config["result_quantity"] == 0 or
-                not isinstance(self.config["update_quantity"], int) or
-                not isinstance(self.config["min_avg_sales_per_day"], int) or
-                self.config["min_avg_sales_per_day"] == 0
+            self.config["marketboard_type"] not in ["World", "Datacentre", "Datacenter"] or
+            self.config["datacentre"] not in valid_datacentres or
+            self.config["world"] not in valid_worlds or
+            not isinstance(self.config["result_quantity"], int) or self.config["result_quantity"] == 0 or
+            not isinstance(self.config["update_quantity"], int) or
+            not isinstance(self.config["min_avg_sales_per_day"], int) or
+            self.config["min_avg_sales_per_day"] == 0 or
+            not isinstance(self.config["display_without_craft_cost"], bool)
         ):
             self.ffxiv_logger.error("Main Config Validation FAILED")
             raise ValueError
@@ -155,11 +160,11 @@ class ConfigHandler:
         if not isinstance(self.config["log_enable"], bool):
             raise ValueError
         elif self.config["log_enable"] and (
-                not isinstance(self.config["log_level"], str) or
-                self.config["log_level"] not in ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"] or
-                not isinstance(self.config["log_mode"], str) or
-                self.config["log_mode"] not in ["WRITE", "APPEND"] or
-                not isinstance(self.config["log_file"], str)
+            not isinstance(self.config["log_level"], str) or
+            self.config["log_level"] not in ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"] or
+            not isinstance(self.config["log_mode"], str) or
+            self.config["log_mode"] not in ["WRITE", "APPEND"] or
+            not isinstance(self.config["log_file"], str)
         ):
             self.ffxiv_logger.error("Logging Config Validation FAILED")
             raise ValueError
