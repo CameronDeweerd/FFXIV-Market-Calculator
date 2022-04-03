@@ -224,7 +224,10 @@ class FfxivDbCreation:
 
     @staticmethod
     def base_state_table():
-        state = ['key,0,1', 'marketboard_type,location,last_id', 'STRING,STRING NOT NULL UNIQUE,INTEGER', 'World,Zurvan,0']
+        state = ['key,0,1',
+                 'marketboard_type,location,last_id',
+                 'STRING,STRING NOT NULL UNIQUE,INTEGER',
+                 'World,Zurvan,0']
         state[0] = tuple(state[0].split(","))
         state[1] = tuple(state[1].split(','))
         state[2] = tuple(state[2].split(','))

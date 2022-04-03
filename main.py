@@ -1,139 +1,30 @@
-import ast
 import json
-import logging
 import math
 import os
-import sys
 import threading
 import time
 from datetime import datetime
 
-import configparser
 import pandas as pd
 import requests
 
+from ConfigHandler import ConfigHandler
+from DiscordHandler import DiscordHandler
 from FFXIV_DB_constructor import FfxivDbCreation as Db_Create
+from LogHandler import LogHandler
 from SQLhelpers import SqlManager
 
-ffxiv_logger = logging.Logger
-
-
-class StreamToLogger(object):
-    """
-    Fake file-like stream object that redirects writes to a logger instance.
-    """
-    def __init__(self, logger, level):
-        self.logger = logger
-        self.level = level
-        self.linebuf = ''
-
-    def write(self, buf):
-        for line in buf.rstrip().splitlines():
-            self.logger.log(self.level, line.rstrip())
-
-    def flush(self):
-        pass
-
-
-def load_config():
-    cfg = configparser.ConfigParser()
-    cfg.read("config.ini")
-    try:
-        config_dict = {
-            "marketboard_type": cfg["MAIN"].get('MarketboardType', 'World').capitalize(),
-            "datacentre": cfg["MAIN"].get('Datacentre', 'Crystal').capitalize(),
-            "world": cfg["MAIN"].get('World', 'Zalera').capitalize(),
-            "result_quantity": cfg["MAIN"].getint('ResultQuantity', 50),
-            "update_quantity": cfg["MAIN"].getint('UpdateQuantity', 0),
-            "min_avg_sales_per_day": cfg["MAIN"].getint('MinAvgSalesPerDay', 20),
-            "log_enable": cfg["LOGGING"].getboolean('LogEnable', False),
-            "log_level": cfg['LOGGING'].get('LogLevel', 'INFO'),
-            "log_mode": cfg['LOGGING'].get('LogMode', 'Write'),
-            "log_file": cfg['LOGGING'].get('LogFile', 'ffxiv_market_calculator.log'),
-            "discord_enable": cfg["DISCORD"].getboolean('DiscordEnable', False),
-            "discord_id": os.getenv('DISCORDID'),
-            "discord_token": os.getenv('DISCORDTOKEN'),
-            "message_ids": ast.literal_eval(cfg['DISCORD'].get('MessageIds'))
-        }
-        return config_dict
-    except Exception as err:
-        print(f"Config Load Error: {err}")
-        exit()
-
-
-def config_validation(config_dict, global_db):
-    error_list = []
-    if config_dict["marketboard_type"] not in ["World", "Datacentre", "Datacenter"]:
-        error_list.append("Config Error: Marketboard Type is Unknown, this value should be "
-                          "World, Datacentre, or Datacenter")
-
-    datacentre_data = global_db.return_query(f'SELECT name FROM datacentre')
-    valid_datacentres = []
-    for item in datacentre_data:
-        valid_datacentres.append(item[0])
-    if config_dict["datacentre"] not in valid_datacentres:
-        error_list.append("Config Error: Datacentre is not in Database, check config")
-
-    world_data = global_db.return_query(f'SELECT name FROM world')
-    valid_worlds = []
-    for item in world_data:
-        valid_worlds.append(item[0])
-    if config_dict["world"] not in valid_worlds:
-        error_list.append("Config Error: World is not in Database, check config")
-
-    if not isinstance(config_dict["result_quantity"], int) or config_dict["result_quantity"] == 0:
-        error_list.append("Config Error: Result Quantity must be a whole number and greater than 0")
-
-    if not isinstance(config_dict["update_quantity"], int):
-        error_list.append("Config Error: Update Quantity must be a whole number")
-
-    if not isinstance(config_dict["min_avg_sales_per_day"], int) or config_dict["min_avg_sales_per_day"] == 0:
-        error_list.append("Config Error: Result Quantity must be a whole number and greater than 0")
-
-    if not isinstance(config_dict["log_enable"], bool):
-        error_list.append("Config Error: Log Enable must be True or False")
-    else:
-        if config_dict["log_level"] not in ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]:
-            error_list.append("Config Error: Log Level is not known, must be one of "
-                              "CRITICAL, ERROR, WARNING, INFO, DEBUG")
-
-        if config_dict["log_mode"] not in ["WRITE", "APPEND"]:
-            error_list.append("Config Error: Marketboard Type is Unknown, this value should be "
-                              "World, Datacentre, or Datacenter")
-
-    if not isinstance(config_dict["discord_enable"], bool):
-        error_list.append("Config Error: Discord Enable must be True or False")
-    elif (
-            config_dict["discord_enable"] and (
-                not config_dict["discord_id"] or
-                not config_dict["discord_token"] or
-                not isinstance(config_dict["discord_id"], str) or
-                not isinstance(config_dict["discord_token"], str)
-            )
-    ):
-        error_list.append("Config Error: if Discord is enabled then environment variables DISCORDID and "
-                          "DISCORDTOKEN must be set to the appropriate values for your Webhook")
-
-    if len(error_list) > 0:
-        for error in error_list:
-            print(error)
-        exit()
-
-
-def config_logging(config_dict):
-    global ffxiv_logger
-    if config_dict['log_enable']:
-        if config_dict['log_mode'] == "WRITE":
-            log_mode = 'w'
-        else:
-            log_mode = 'a'
-        logging.basicConfig(
-            level=logging.getLevelName(config_dict['log_level']),
-            format='%(asctime)s\t%(levelname)s\t\t%(name)s\t\t%(message)s',
-            filename=config_dict['log_file'],
-            filemode=log_mode
-        )
-    ffxiv_logger = logging.getLogger('ffxiv-market-calc')
+global_db_path = os.path.join("databases", "global_db")
+try:
+    Db_Create(global_db_path)
+    print("New Global DB Created")
+except ValueError:
+    print("Global Database already exists")
+    pass
+global_db = SqlManager(global_db_path)
+config = ConfigHandler('config.ini', global_db)
+logging_config = config.parse_logging_config()
+ffxiv_logger = LogHandler.get_logger(__name__, logging_config)
 
 
 def api_delay():
@@ -238,7 +129,7 @@ def get_sale_data(item_number, location, entries=5000):
 
 
 # puts the data from the Universalis API into the db
-def update_from_api(location_db, global_db, location, start_id, update_quantity):
+def update_from_api(location_db, location, start_id, update_quantity):
     last_id = location_db.return_query('SELECT item_num FROM item ORDER BY item_num DESC LIMIT 1')
     last_item = int(last_id[0][0])
     if update_quantity == 0:
@@ -308,8 +199,8 @@ def update_cost_to_craft(location_db):
 
 
 # pulls data from the API, and performs all required calculations on it.
-def update(location_db, global_db, location, start_id, update_quantity):
-    update_from_api(location_db, global_db, location, start_id, update_quantity)
+def update(location_db, location, start_id, update_quantity):
+    update_from_api(location_db, location, start_id, update_quantity)
     ffxiv_logger.info("Sales Data Added to Database")
     print("Sales Data Added to Database")
     update_ingredient_costs(location_db)
@@ -338,9 +229,8 @@ def profit_table(location_db, db_name, result_quantity, velocity=10, recipe_lvl=
     print(frame.to_string(index=False).replace('"', ''))
 
 
-def discord_webhook(config_dict, location_db, location):
-    webhook_base = f"https://discord.com/api/webhooks/{config_dict['discord_id']}/{config_dict['discord_token']}" \
-                   f"/messages/"
+def discord_webhook(main_config, discord_config, location_db, location):
+    discord = DiscordHandler(discord_config, logging_config)
     message_header = f"**Data from {location} > 2 avg daily sales @ {datetime.now().strftime('%d/%m/%Y %H:%M')}**\n```"
     message_footer = f"```"
     to_display = ["Name", "Profit", "Avg-Sales", "Avg-Cost", "Avg-Cft-Cost"]
@@ -348,43 +238,39 @@ def discord_webhook(config_dict, location_db, location):
     limit = 20
     offset = 0
     level_limited_recipes = f"SELECT item_result FROM recipe WHERE recipe_level_table <= 1000"
-    for message_id in config_dict['message_ids']:
+
+    if len(discord_config['message_ids']) == 0:
         results = location_db.return_query(
             f"SELECT {to_sql} FROM item WHERE "
-            f"regular_sale_velocity >= {config_dict['min_avg_sales_per_day']} AND item_num IN "
-            f"({level_limited_recipes}) ORDER BY craft_profit DESC LIMIT {limit} OFFSET {offset}")
+            f"regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND item_num IN "
+            f"({level_limited_recipes}) ORDER BY craft_profit DESC LIMIT 20")
         frame = pd.DataFrame(results)
         frame.columns = to_display
         message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
-        requests.patch(webhook_base + str(message_id), json.dumps({"content": message}),
-                       headers={'content-type': 'application/json'})
-        offset += 10
+        discord.discord_message_create(message)
+    else:
+        for message_id in discord_config['message_ids']:
+            results = location_db.return_query(
+                f"SELECT {to_sql} FROM item WHERE "
+                f"regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND item_num IN "
+                f"({level_limited_recipes}) ORDER BY craft_profit DESC LIMIT {limit} OFFSET {offset}")
+            frame = pd.DataFrame(results)
+            frame.columns = to_display
+            message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
+            discord.discord_message_update(message_id, message)
+            offset += 10
 
 
 def main():
-    global_db_path = os.path.join("databases", "global_db")
-    try:
-        Db_Create(global_db_path)
-        print("New Global DB Created")
-    except ValueError:
-        print("Global Database already exists")
-        pass
-    global_db = SqlManager(global_db_path)
-
-    config_dict = load_config()
-    config_validation(config_dict, global_db)
-    config_logging(config_dict)
-    if config_dict['log_enable']:
-        print("Config loaded with logging enabled, logging to file from now")
-    sys.stderr = StreamToLogger(ffxiv_logger, logging.ERROR)
-
-    marketboard_type = config_dict["marketboard_type"]
-    min_avg_sales_per_day = config_dict["min_avg_sales_per_day"]
-
+    main_config = config.parse_main_config()
+    marketboard_type = main_config["marketboard_type"]
+    result_quantity = int(main_config["result_quantity"])
+    update_quantity = int(main_config["update_quantity"])
+    min_avg_sales_per_day = main_config["min_avg_sales_per_day"]
     location_switch = {
-        "World": config_dict["world"],
-        "Datacentre": config_dict["datacentre"],
-        "Datacenter": config_dict["datacentre"]
+        "World": main_config["world"],
+        "Datacentre": main_config["datacentre"],
+        "Datacenter": main_config["datacentre"]
     }
     location = location_switch.get(marketboard_type, 'World')
     market_db_name = os.path.join("databases", marketboard_type + "_" + location)
@@ -410,29 +296,21 @@ def main():
             f'VALUES("{marketboard_type}", "{location}", 0)'
         )
     location_db = SqlManager(market_db_name)
-    update_quantity = int(config_dict["update_quantity"])
-    update(location_db, global_db, location, start_id, update_quantity)
+
+    update(location_db, location, start_id, update_quantity)
     if update_quantity == 0:
         global_db.execute_query(
             f'UPDATE state SET last_id = 0 WHERE '
             f'marketboard_type LIKE "{marketboard_type}" AND location LIKE "{location}"'
         )
-    result_quantity = int(config_dict["result_quantity"])
+
     profit_table(location_db, market_db_name, result_quantity, min_avg_sales_per_day)
-    if config_dict['discord_enable']:
-        discord_webhook(config_dict, location_db, location)
-    # profit_table(db, db_name, velocity=3, recipe_lvl=380)
 
-
-# def calculated_column(conn):
-#     # for i in range(10):
-#     #     db.execute_query(f"UPDATE recipe SET ingredientCost{i} = 0")
-#     db.execute_query("ALTER TABLE recipe DROP COLUMN costToCraft")
-#     ingred_calc = "AmountIngredient0*ingredientCost0 + AmountIngredient1*ingredientCost1 +
-#     AmountIngredient2*ingredientCost2 + AmountIngredient3*ingredientCost3 + AmountIngredient4*ingredientCost4 +
-#     AmountIngredient5*ingredientCost5 + AmountIngredient6*ingredientCost6 + AmountIngredient7*ingredientCost7 +
-#     AmountIngredient8*ingredientCost8 + AmountIngredient9*ingredientCost9"
-#     db.execute_query(f"ALTER TABLE recipe ADD costToCraft AS ({ingred_calc})")
+    discord_config = config.parse_discord_config()
+    if discord_config['discord_enable']:
+        discord_webhook(main_config, discord_config, location_db, location)
+    else:
+        ffxiv_logger.info('Discord Disabled in Config')
 
 
 if __name__ == '__main__':
