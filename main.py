@@ -119,13 +119,19 @@ def get_sale_nums(item_number, location):
 
 # Calls the Universalis API and returns the data and the status code
 def get_sale_data(item_number, location, entries=5000):
-    r = requests.get(f'https://universalis.app/api/history/{location}/{item_number}?entries={entries}')
-    try:
-        data = json.loads(r.content.decode('utf-8'))
-        return data, r
-    except Exception as err:
-        ffxiv_logger.error(err)
-        return None, r
+    retry_count = 5
+    while retry_count > 0:
+        r = requests.get(f'https://universalis.app/api/history/{location}/{item_number}?entries={entries}')
+        try:
+            data = json.loads(r.content.decode('utf-8'))
+            if math.ceil(data["regularSaleVelocity"]) == 0:
+                retry_count -= 1
+                api_delay()
+                continue
+            return data, r
+        except Exception as err:
+            ffxiv_logger.error(err)
+            return None, r
 
 
 # puts the data from the Universalis API into the db
