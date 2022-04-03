@@ -245,12 +245,13 @@ def profit_table(location_db, location, result_quantity, velocity=10, recipe_lvl
 
 def discord_webhook(main_config, discord_config, location_db, location, no_craft=False):
     discord = DiscordHandler(discord_config, logging_config)
+    update_time = datetime.now().strftime('%d/%m/%Y %H:%M')
     if not no_craft:
         message_header = f"**Data from {location} > 2 avg daily sales @ " \
-                         f"{datetime.now().strftime('%d/%m/%Y %H:%M')}**\n```"
+                         f"{update_time}**\n```"
     else:
         message_header = f"**Data from {location} > 2 avg daily sales (No Craft Cost) @ " \
-                         f"{datetime.now().strftime('%d/%m/%Y %H:%M')}**\n```"
+                         f"{update_time}**\n```"
     message_footer = f"```"
     to_display = ["Name", "Profit", "Avg-Sales", "Avg-Cost", "Avg-Cft-Cost"]
     to_sql = "name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft"

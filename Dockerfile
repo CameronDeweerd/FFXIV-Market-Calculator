@@ -8,6 +8,7 @@ RUN apt update -y && apt install --no-install-recommends -y sqlite3 && \
     pip install --no-cache-dir -r requirements.txt
 
 ENV LC_ALL=C
+ENV TZ="Etc/UTC"
 ENV DISCORDID=PLACEHOLDER
 ENV DISCORDTOKEN=PLACEHOLDER
 
