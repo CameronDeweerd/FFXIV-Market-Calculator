@@ -344,6 +344,9 @@ class FfxivDbCreation:
         creation_command = f"CREATE TABLE IF NOT EXISTS {table_name} ("
         for i in range(num_columns):
             creation_command = creation_command + f"{column_names[i]} {data_types[i]}, "
+        if table_name == "recipe":
+            creation_command = creation_command + \
+                               "FOREIGN KEY (item_result) REFERENCES item (item_num))"
         creation_command = creation_command[:-2] + ")"
         database.execute_query(creation_command)
 

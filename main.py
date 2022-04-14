@@ -148,7 +148,9 @@ def get_sale_data(item_number, location, entries=5000):
             How many Universalis market sale entries to retrieve
     """
     request_response = requests.get(
-        f'https://universalis.app/api/history/{location}/{item_number}?entries={entries}'
+        f'https://universalis.app/api/v2/history/{location}/{item_number}'
+        f'?entriesToReturn={entries}'
+        f'&statsWithin=14'
     )
     try:
         data = json.loads(request_response.content.decode('utf-8'))
