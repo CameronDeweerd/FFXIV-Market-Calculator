@@ -1,13 +1,24 @@
+"""
+Module to perform initial database creation/population for FFXIV-Market-Calculator
+"""
 import os
 import pathlib
 import sys
 
 import requests
 
-from SQLhelpers import SqlManager
+from sql_helpers import SqlManager
 
 
 def filter_marketable_items(items, marketable_ids):
+    """
+    Filters items to only marketable items
+    Parameters:
+        items : list
+            Raw item data from api
+        marketable_ids : list
+            Marketable item IDs
+    """
     marketable_items = [None, (
         'item_num', 'name', 'ave_cost', 'regular_sale_velocity', 'ave_nq_cost', 'nq_sale_velocity',
         'ave_hq_cost', 'hq_sale_velocity'), (
@@ -19,7 +30,8 @@ def filter_marketable_items(items, marketable_ids):
         if len(split_line) >= 98:
             line_concatenate = []
             if split_line[0] in marketable_ids:
-                marketable_items.append((split_line[0], split_line[len(split_line) - 88], 'NULL', 'NULL', 'NULL',
+                marketable_items.append((split_line[0], split_line[len(split_line) - 88],
+                                         'NULL', 'NULL', 'NULL',
                                          'NULL', 'NULL', 'NULL'))
         else:
             line_concatenate = split_line
@@ -27,25 +39,53 @@ def filter_marketable_items(items, marketable_ids):
 
 
 class FfxivDbCreation:
+    """
+    Class for handling the construction of databases for the script.
 
+    Attributes:
+    -------
+    database : SqlManager object
+        SqlManager object for database operations
+
+    Methods:
+    -------
+    market_db_create():
+        Creates a new database for market data
+    global_db_create():
+        Creates a new database for global data
+    get_data_from_url():
+        Retrieves data from web api
+    get_marketable_ids():
+        Retrieves data for marketable items
+    filter_marketable_recipes():
+        Filters recipes to marketable items
+    filter_datacentres():
+        Filters for usable datacentres
+    filter_worlds():
+        Filters for usable worlds
+    base_state_table():
+        Creates the base templated state table
+    csv_to_db():
+        Handles writing all data from other methods to the databases
+    """
     def __init__(self, db_name):
         """
         pulls data from the universalis API to limit items to marketable items
         pulls data from:
-         "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Item.csv" to get item data
-         "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Recipe.csv" to get recipe data
-         "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/WorldDCGroupType.csv" to get dc data
-         "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/World.csv" to get world data
-
-
-        creates a new database w/ the given name
-
-        :param db_name: str The name that the database should be called
+        https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/...
+            Item.csv to get item data
+            Recipe.csv to get recipe data
+            WorldDCGroupType.csv to get dc data
+            World.csv to get world data
+        creates a new database w/ the given name if it doesn't exist
+        Parameters:
+            db_name : str
+                The name that the database should be called
         """
         if os.path.exists(pathlib.Path(__file__).parent / db_name):
             raise ValueError("Database with that name already exists")
 
-        self.db = SqlManager(db_name)
+        self.database = SqlManager(db_name)
 
         if db_name == os.path.join("databases", "global_db"):
             self.global_db_create()
@@ -53,13 +93,18 @@ class FfxivDbCreation:
             self.market_db_create()
 
     def market_db_create(self):
+        """
+        Creates the blank market data database
+        """
         # gets a list of integers in string format ['2','3','5','6',...]
         marketable_ids = self.get_marketable_ids()
         print('Got marketable ID list')
 
         # gets a list of tuples containing the item data
         # index 0-2 are the column numbers, titles, and data types; index 3+ is the data
-        items = self.get_data_from_url('https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Item.csv')
+        items = self.get_data_from_url(
+            'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/Item.csv'
+        )
         print('Got raw item CSV')
 
         # gets a list of tuples containing the item data
@@ -82,9 +127,11 @@ class FfxivDbCreation:
         print('recipe table created')
 
         for i in range(10):
-            self.db.execute_query(f"ALTER TABLE recipe ADD ingredient_cost_{i} INTEGER DEFAULT 0;")
+            self.database.execute_query(
+                f"ALTER TABLE recipe ADD ingredient_cost_{i} INTEGER DEFAULT 0;"
+            )
 
-        self.db.execute_query(
+        self.database.execute_query(
             "ALTER TABLE recipe ADD cost_to_craft GENERATED ALWAYS AS ("
             "amount_ingredient_0 * ingredient_cost_0 + amount_ingredient_1 * ingredient_cost_1 + "
             "amount_ingredient_2 * ingredient_cost_2 + amount_ingredient_3 * ingredient_cost_3 + "
@@ -92,19 +139,23 @@ class FfxivDbCreation:
             "amount_ingredient_6 * ingredient_cost_6 + amount_ingredient_7 * ingredient_cost_7 + "
             "amount_ingredient_8 * ingredient_cost_8 + amount_ingredient_9 * ingredient_cost_9)")
 
-        self.db.execute_query(f"ALTER TABLE item ADD cost_to_craft INTEGER DEFAULT 0;")
+        self.database.execute_query("ALTER TABLE item ADD cost_to_craft INTEGER DEFAULT 0;")
         # self.db.execute_query(
         #     f"ALTER TABLE item ADD costToCraft GENERATED ALWAYS AS (SELECT costToCraft
         #     FROM recipe WHERE ItemResult = itemNum LIMIT 1);")
-        self.db.execute_query(f"ALTER TABLE item ADD craft_profit GENERATED ALWAYS AS (ave_cost - cost_to_craft);")
-
-        # TODO add the additional columns like:
-        #  ave_cost,regSaleVelocity,ave_NQ_cost,nqSaleVelocity,ave_HQ_cost,hqSaleVelocity'
+        self.database.execute_query(
+            "ALTER TABLE item ADD craft_profit GENERATED ALWAYS AS (ave_cost - cost_to_craft);"
+        )
 
     def global_db_create(self):
+        """
+        Creates the blank global data database
+        """
         # gets a list of tuples containing the datacentre data
         datacentres = self.get_data_from_url(
-            'https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/WorldDCGroupType.csv')
+            'https://raw.githubusercontent.com/xivapi/'
+            'ffxiv-datamining/master/csv/WorldDCGroupType.csv'
+        )
         datacentres[1] = datacentres[1].replace('#', 'dc_key')
         print('Got raw datacentre CSV')
 
@@ -134,18 +185,21 @@ class FfxivDbCreation:
     @staticmethod
     def get_data_from_url(url):
         """
-        Calls a web API to get data
-
-        :return: content [list]
+        pulls data from web apis
+        Parameters:
+            url : str
+                url to perform the http request on
         """
-        r = requests.get(url)
-        if r.status_code == 200:
-            data = r.content.decode('utf-8-sig')
+        request_data = requests.get(url)
+        if request_data.status_code == 200:
+            data = request_data.content.decode('utf-8-sig')
             return data.splitlines()
-        else:
-            sys.exit(f"{url} not available")
+        sys.exit(f"{url} not available")
 
     def get_marketable_ids(self):
+        """
+        Retrieves data for marketable items
+        """
         marketable_id_data = self.get_data_from_url("https://universalis.app/api/marketable")
         marketable_ids = marketable_id_data[0].split(',')
         marketable_ids[0] = marketable_ids[0].replace('[', '')
@@ -154,6 +208,14 @@ class FfxivDbCreation:
 
     @staticmethod
     def filter_marketable_recipes(recipes, marketable_ids):
+        """
+        Filters recipes to marketable items
+        Parameters:
+            recipes : list
+                Raw recipe data from api
+            marketable_ids : list
+                List of marketable item IDs
+        """
         marketable_recipes = recipes[0:3]
         marketable_recipes[
             1] = 'csv_key,number,craft_type,recipe_level_table,item_result,amount_result,' \
@@ -162,9 +224,12 @@ class FfxivDbCreation:
                  'item_ingredient_4,amount_ingredient_4,item_ingredient_5,amount_ingredient_5,' \
                  'item_ingredient_6,amount_ingredient_6,item_ingredient_7,amount_ingredient_7,' \
                  'item_ingredient_8,amount_ingredient_8,item_ingredient_9,amount_ingredient_9,' \
-                 'empty_column_1,is_secondary,material_quality_factor,difficulty_factor,quality_factor,' \
-                 'durability_factor,empty_column_2,required_craftsmanship,required_control,quick_synth_craftsmanship,' \
-                 'quick_synth_control,secret_recipe_book,quest,can_quick_synth,can_hq,exp_rewarded,' \
+                 'empty_column_1,is_secondary,material_quality_factor,difficulty_factor,' \
+                 'quality_factor,' \
+                 'durability_factor,empty_column_2,required_craftsmanship,required_control,' \
+                 'quick_synth_craftsmanship,' \
+                 'quick_synth_control,secret_recipe_book,quest,can_quick_synth,' \
+                 'can_hq,exp_rewarded,' \
                  'status_required,item_required,is_specialization_required,is_expert,patch_number'
         marketable_recipes[
             2] = 'INTEGER PRIMARY KEY,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
@@ -189,6 +254,12 @@ class FfxivDbCreation:
 
     @staticmethod
     def filter_datacentres(datacentres):
+        """
+        Filters for usable datacentres
+        Parameters:
+            datacentres : list
+                Raw datacentre data from api
+        """
         usable_datacentres = datacentres[0:3]
         usable_datacentres[1] = 'dc_key,name,region'
         usable_datacentres[2] = 'INTEGER PRIMARY KEY, STRING, INTEGER'
@@ -207,6 +278,12 @@ class FfxivDbCreation:
 
     @staticmethod
     def filter_worlds(worlds):
+        """
+        Filters for usable worlds
+        Parameters:
+            worlds : list
+                Raw world data from api
+        """
         usable_worlds = worlds[0:3]
         usable_worlds[1] = 'world_key, name, datacenter'
         usable_worlds[2] = 'INTEGER PRIMARY KEY, STRING, INTEGER'
@@ -224,7 +301,13 @@ class FfxivDbCreation:
 
     @staticmethod
     def base_state_table():
-        state = ['key,0,1', 'marketboard_type,location,last_id', 'STRING,STRING NOT NULL UNIQUE,INTEGER', 'World,Zurvan,0']
+        """
+        Creates the base templated state table
+        """
+        state = ['key,0,1',
+                 'marketboard_type,location,last_id',
+                 'STRING,STRING NOT NULL UNIQUE,INTEGER',
+                 'World,Zurvan,0']
         state[0] = tuple(state[0].split(","))
         state[1] = tuple(state[1].split(','))
         state[2] = tuple(state[2].split(','))
@@ -234,7 +317,15 @@ class FfxivDbCreation:
 
     # function used to convert original files into the DB
     def csv_to_db(self, csv_data, table_name):
-        db = self.db
+        """
+        Filters for usable worlds
+        Parameters:
+            csv_data : list
+                Schema/data for db creation/population
+            table_name : string
+                Name of the table to be created in the database
+        """
+        database = self.database
 
         column_names = csv_data[1]
         data_types = csv_data[2]
@@ -253,10 +344,9 @@ class FfxivDbCreation:
         creation_command = f"CREATE TABLE IF NOT EXISTS {table_name} ("
         for i in range(num_columns):
             creation_command = creation_command + f"{column_names[i]} {data_types[i]}, "
-        creation_command = creation_command[:-2] + ")"  # remove the final comma and close the command
-        db.execute_query(creation_command)
+        creation_command = creation_command[:-2] + ")"
+        database.execute_query(creation_command)
 
         # insert all values
         insert_command = f"INSERT INTO {table_name} VALUES ({question_marks})"
-        db.execute_query_many(insert_command, csv_data[3:])
-        return
+        database.execute_query_many(insert_command, csv_data[3:])
