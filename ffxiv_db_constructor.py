@@ -223,25 +223,16 @@ class FfxivDbCreation:
                  'item_ingredient_2,amount_ingredient_2,item_ingredient_3,amount_ingredient_3,' \
                  'item_ingredient_4,amount_ingredient_4,item_ingredient_5,amount_ingredient_5,' \
                  'item_ingredient_6,amount_ingredient_6,item_ingredient_7,amount_ingredient_7,' \
-                 'item_ingredient_8,amount_ingredient_8,item_ingredient_9,amount_ingredient_9,' \
-                 'empty_column_1,is_secondary,material_quality_factor,difficulty_factor,' \
-                 'quality_factor,' \
-                 'durability_factor,empty_column_2,required_craftsmanship,required_control,' \
-                 'quick_synth_craftsmanship,' \
-                 'quick_synth_control,secret_recipe_book,quest,can_quick_synth,' \
-                 'can_hq,exp_rewarded,' \
-                 'status_required,item_required,is_specialization_required,is_expert,patch_number'
+                 'item_ingredient_8,amount_ingredient_8,item_ingredient_9,amount_ingredient_9'
+
         marketable_recipes[
             2] = 'INTEGER PRIMARY KEY,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
                  'INTEGER,INTEGER,INTEGER,INTEGER,' \
-                 'INTEGER,INTEGER,INTEGER,INTEGER,' \
-                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
-                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
-                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,INTEGER,' \
-                 'INTEGER,INTEGER,INTEGER,INTEGER,INTEGER'
+                 'INTEGER,INTEGER,INTEGER,INTEGER'
+
         marketable_recipes[1] = tuple(marketable_recipes[1].split(','))
         marketable_recipes[2] = tuple(marketable_recipes[2].split(','))
 
@@ -249,7 +240,7 @@ class FfxivDbCreation:
             split_line = line.split(',')
             crafted_item_id = split_line[4]
             if crafted_item_id in marketable_ids:
-                marketable_recipes.append(tuple(split_line))
+                marketable_recipes.append(tuple(split_line[:26]))
         return marketable_recipes
 
     @staticmethod
@@ -347,7 +338,8 @@ class FfxivDbCreation:
         if table_name == "recipe":
             creation_command = creation_command + \
                                "FOREIGN KEY (item_result) REFERENCES item (item_num))"
-        creation_command = creation_command[:-2] + ")"
+        else:
+            creation_command = creation_command[:-2] + ")"
         database.execute_query(creation_command)
 
         # insert all values
