@@ -1,7 +1,25 @@
+"""
+Module for handling the supply of loggers for FFXIV-Market-Calculator
+"""
 import logging
 
 
-class LogHandler(object):
+class LogHandler:  # pylint: disable=too-few-public-methods
+    """
+    Class for handling the script discord api calls.
+
+    Attributes:
+    -------
+    _LOG : Logger object
+        Holds the logger object
+
+    Methods:
+    -------
+    __create_logger(module, logging_config):
+        Creates a new logger
+    get_logger(module, logging_config):
+        Retrieves a logger for the calling module
+    """
     _LOG = None
 
     @staticmethod
