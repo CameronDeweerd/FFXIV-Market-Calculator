@@ -82,3 +82,17 @@ class DiscordHandler:
         requests.patch(f"{webhook_path}{str(message_id)}", json.dumps({"content": data}),
                        headers={'content-type': 'application/json'})
         self.ffxiv_logger.info("Discord message updated")
+
+    def discord_queue_handler(self, message_queue):
+        """
+        Processes the message queue through create or update.
+
+        Parameters:
+            message_queue : list[str]
+                Messages for update
+        """
+        for message in message_queue:
+            if message[0] == 0:
+                self.discord_message_create(message[1])
+            else:
+                self.discord_message_update(message[0], message[1])

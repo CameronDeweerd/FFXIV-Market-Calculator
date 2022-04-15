@@ -346,21 +346,23 @@ def discord_webhook(main_config, discord_config, location_db, location, no_craft
     )
     limit = 20
     offset = 0
-
+    message_queue = []
     if len(discord_config['message_ids']) == 0:
         if not no_craft:
             sales_data = location_db.return_query(f"{base_sql}craft_profit DESC LIMIT 20")
         else:
             sales_data = location_db.return_query(f"{base_sql}ave_cost DESC LIMIT 20")
-        message = message_builder.message_builder(location, sales_data, no_craft)
-        discord.discord_message_create(message)
+        message_queue.append(tuple((
+            0, message_builder.message_builder(location, sales_data, no_craft)
+        )))
     elif not no_craft:
         for message_id in discord_config['message_ids']:
             sales_data = location_db.return_query(
                 f"{base_sql}craft_profit DESC LIMIT {limit} OFFSET {offset}"
             )
-            message = message_builder.message_builder(location, sales_data, no_craft)
-            discord.discord_message_update(message_id, message)
+            message_queue.append(tuple((
+                message_id, message_builder.message_builder(location, sales_data, no_craft)
+            )))
             offset += 20
     elif no_craft:
         if len(discord_config['message_ids']) > 1:
@@ -369,8 +371,9 @@ def discord_webhook(main_config, discord_config, location_db, location, no_craft
                 sales_data = location_db.return_query(
                     f"{base_sql}craft_profit DESC LIMIT {limit} OFFSET {offset}"
                 )
-                message = message_builder.message_builder(location, sales_data, no_craft)
-                discord.discord_message_update(message_id, message)
+                message_queue.append(tuple((
+                    message_id, message_builder.message_builder(location, sales_data, no_craft)
+                )))
                 offset += 20
 
             offset = 0
@@ -378,8 +381,9 @@ def discord_webhook(main_config, discord_config, location_db, location, no_craft
                 sales_data = location_db.return_query(
                     f"{base_sql}ave_cost DESC LIMIT {limit} OFFSET {offset}"
                 )
-                message = message_builder.message_builder(location, sales_data, no_craft)
-                discord.discord_message_update(message_id, message)
+                message_queue.append(tuple((
+                    message_id, message_builder.message_builder(location, sales_data, no_craft)
+                )))
                 offset += 20
 
         elif len(discord_config['message_ids']) == 1:
@@ -387,15 +391,20 @@ def discord_webhook(main_config, discord_config, location_db, location, no_craft
                 sales_data = location_db.return_query(
                     f"{base_sql}craft_profit DESC LIMIT {limit} OFFSET {offset}"
                 )
-                message = message_builder.message_builder(location, sales_data, no_craft)
-                discord.discord_message_update(message_id, message)
+                message_queue.append(tuple((
+                    message_id, message_builder.message_builder(location, sales_data, no_craft)
+                )))
                 offset += 20
 
             sales_data = location_db.return_query(
                 f"{base_sql}ave_cost DESC LIMIT {limit}"
             )
-            message = message_builder.message_builder(location, sales_data, no_craft)
-            discord.discord_message_create(message)
+            message_queue.append(tuple((
+                0, message_builder.message_builder(location, sales_data, no_craft)
+            )))
+
+    discord.discord_queue_handler(message_queue)
+
 
 
 def main():
