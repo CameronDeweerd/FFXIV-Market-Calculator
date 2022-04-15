@@ -378,8 +378,7 @@ def discord_webhook(main_config, discord_config, location_db, location, no_craft
     discord = DiscordHandler(logging_config)
     for message_data in message_data_queue:
         message_data.message_data_builder(location_db, main_config['min_avg_sales_per_day'])
-        discord.discord_queue_handler(tuple((message_data.message_builder(location))
-                                            ))
+        discord.discord_queue_handler(tuple((message_data.message_builder(location))))
 
 
 def main():
