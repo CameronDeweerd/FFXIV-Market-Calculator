@@ -43,6 +43,7 @@ class DiscordHandler:
         self.ffxiv_logger = LogHandler.get_logger(__name__, logging_config)
         self.discord_id = os.getenv('DISCORDID')
         self.discord_token = os.getenv('DISCORDTOKEN')
+        self.ffxiv_logger.debug(f'{str(self.discord_token)} {str(self.discord_id)}')
         if not all([
             self.discord_id,
             self.discord_token,
@@ -52,7 +53,7 @@ class DiscordHandler:
             self.ffxiv_logger.error("Discord Webhook ID or Token missing")
             raise TypeError
         self.webhook_base = f"https://discord.com/api/webhooks/" \
-                            f"{self.discord_id}/{self.discord_token}/"
+                            f"{self.discord_id}/{self.discord_token}"
 
     def discord_message_create(self, data):
         """
@@ -63,8 +64,10 @@ class DiscordHandler:
                 Message data to be sent to the Discord Webhook
         """
         self.ffxiv_logger.info("Creating new discord message")
-        requests.post(self.webhook_base, json.dumps({"content": data}),
-                      headers={'content-type': 'application/json'})
+        response = requests.post(self.webhook_base, json.dumps({"content": data}),
+                                 headers={'content-type': 'application/json'})
+        self.ffxiv_logger.debug(f'{str(response.status_code)} {response.text} '
+                                f'{response.request.url}')
         self.ffxiv_logger.info("Discord message sent")
 
     def discord_message_update(self, message_id, data):
@@ -78,21 +81,24 @@ class DiscordHandler:
                 Message data to be sent to the Discord Webhook
         """
         self.ffxiv_logger.info("Updating discord message")
-        webhook_path = f"{self.webhook_base}messages/"
-        requests.patch(f"{webhook_path}{str(message_id)}", json.dumps({"content": data}),
-                       headers={'content-type': 'application/json'})
+        webhook_path = f"{self.webhook_base}/messages/"
+        response = requests.patch(f"{webhook_path}{str(message_id)}",
+                                  json.dumps({"content": data}),
+                                  headers={'content-type': 'application/json'})
+        self.ffxiv_logger.debug(f'{str(response.status_code)} {response.text} '
+                                f'{response.request.url}')
         self.ffxiv_logger.info("Discord message updated")
 
-    def discord_queue_handler(self, message_queue):
+    def discord_queue_handler(self, message):
         """
         Processes the message queue through create or update.
 
         Parameters:
-            message_queue : list[str]
-                Messages for update
+            message : tuple
+                Message ID and message data
         """
-        for message in message_queue:
-            if message[0] == 0:
-                self.discord_message_create(message[1])
-            else:
-                self.discord_message_update(message[0], message[1])
+        self.ffxiv_logger.debug(message)
+        if message[0] == 0:
+            self.discord_message_create(message[1])
+        else:
+            self.discord_message_update(message[0], message[1])

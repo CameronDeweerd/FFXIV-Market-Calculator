@@ -26,34 +26,56 @@ class MessageBuilder:  # pylint: disable=too-few-public-methods
     def __init__(self, logging_config):
         self.ffxiv_logger = LogHandler.get_logger(__name__, logging_config)
         self.update_time = datetime.now().strftime('%d/%m/%Y %H:%M')
+        self.message_id = 0
+        self.sql_dict = {
+            "data_type": "craft_profit",
+            "limit": 20,
+            "offset": 0
+        }
+        self.no_craft = False
+        self.results = ""
 
-    @staticmethod
-    def message_builder(location, sales_data, no_craft):
+    def message_data_builder(self, location_db, sale_velocity):
+        """
+        Queries the database and builds the message data for console or Discord.
+
+        Parameters:
+            location_db : str
+                Database for the location
+            sale_velocity : int
+                Minimum number of sales per day to retrieve
+        """
+        self.results = location_db.return_query(
+            f"SELECT name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft "
+            f"FROM item "
+            f"WHERE regular_sale_velocity >= {sale_velocity} AND "
+            f"item_num IN ("
+            f"SELECT item_result FROM recipe WHERE recipe_level_table <= 1000"
+            f") ORDER BY {self.sql_dict['data_type']} DESC LIMIT {self.sql_dict['limit']} "
+            f"OFFSET {self.sql_dict['offset']}"
+        )
+
+    def message_builder(self, location):
         """
         Takes the data and builds message/s for console or Discord.
 
         Parameters:
             location : str
                 World/DC the sales data is for
-            sales_data : dict
-                Sales data for parsing into the message
-            no_craft : bool
-                Whether to also display most profitable without crafting costs
         """
-        update_time = datetime.now().strftime('%d/%m/%Y %H:%M')
-        if no_craft:
+        if self.no_craft:
             message_header = (
                 f"*(No Craft Cost)* **Data from {location} > 2 avg daily sales @ "
-                f"{update_time}**\n```"
+                f"{self.update_time}**\n```"
             )
         else:
             message_header = (
                 f"**Data from {location} > 2 avg daily sales @ "
-                f"{update_time}**\n```"
+                f"{self.update_time}**\n```"
             )
         message_footer = "```"
         to_display = ["Name", "Profit", "Avg-Sales", "Avg-Cost", "Avg-Cft-Cost"]
-        frame = pd.DataFrame(sales_data)
+        frame = pd.DataFrame(self.results)
         frame.columns = to_display
         message = message_header + frame.to_string(index=False).replace('"', '') + message_footer
-        return message
+        return self.message_id, message
