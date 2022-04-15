@@ -59,8 +59,7 @@ def get_sale_nums(item_number, location):
             FFXIV_LOGGER.error(f"item_number {item_number} found no data")
         except Exception as err:
             FFXIV_LOGGER.error(f"{err} w/ data pull")
-        finally:
-            return sales_dict, 0
+        return sales_dict, 0
 
     try:
         if data["regularSaleVelocity"] > 142 or math.ceil(data["regularSaleVelocity"]) == 0:
@@ -301,22 +300,17 @@ def profit_table(location_db, location, result_quantity, velocity=10, no_craft=F
             Whether to also display most profitable without crafting costs
     """
     print("\n\n")
-    base_sql = (
-        f"SELECT name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft "
-        f"FROM item WHERE "
-        f"regular_sale_velocity >= {velocity} AND item_num IN ("
-        f"SELECT item_result FROM recipe WHERE recipe_level_table <= 1000"
-        f") ORDER BY "
-    )
-    if not no_craft:
-        sales_data = location_db.return_query(
-            f"{base_sql}craft_profit DESC LIMIT {result_quantity}"
-        )
-    else:
-        sales_data = location_db.return_query(f"{base_sql}ave_cost DESC LIMIT {result_quantity}")
-
-    message = message_builder.message_builder(location, sales_data, no_craft)
+    message_data = MessageBuilder(logging_config)
+    message_data.sql_dict["limit"] = result_quantity
+    message_data.no_craft = no_craft
+    message_data.message_data_builder(location_db, velocity)
+    message = message_data.message_builder(location)[1]
     print(message)
+    if no_craft:
+        message_data.sql_dict["type"] = "ave_cost"
+        message_data.message_data_builder(location_db, velocity)
+        message = message_data.message_builder(location)[1]
+        print(message)
 
 
 def discord_webhook(main_config, discord_config, location_db, location, no_craft=False):
@@ -335,67 +329,57 @@ def discord_webhook(main_config, discord_config, location_db, location, no_craft
         no_craft : bool
             Whether to also display most profitable without crafting costs
     """
-    discord = DiscordHandler(logging_config)
-    base_sql = (
-        f"SELECT name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft "
-        f"FROM item "
-        f"WHERE regular_sale_velocity >= {main_config['min_avg_sales_per_day']} AND "
-        f"item_num IN ("
-        f"SELECT item_result FROM recipe WHERE recipe_level_table <= 1000"
-        f") ORDER BY "
-    )
-    limit = 20
     offset = 0
-
+    message_data_queue = []
     if len(discord_config['message_ids']) == 0:
-        if not no_craft:
-            sales_data = location_db.return_query(f"{base_sql}craft_profit DESC LIMIT 20")
-        else:
-            sales_data = location_db.return_query(f"{base_sql}ave_cost DESC LIMIT 20")
-        message = message_builder.message_builder(location, sales_data, no_craft)
-        discord.discord_message_create(message)
+        message_data = MessageBuilder(logging_config)
+        message_data_queue.append(message_data)
+        if no_craft:
+            message_data = MessageBuilder(logging_config)
+            message_data.sql_dict["data_type"] = "ave_cost"
+            message_data.no_craft = no_craft
+            message_data_queue.append(message_data)
     elif not no_craft:
         for message_id in discord_config['message_ids']:
-            sales_data = location_db.return_query(
-                f"{base_sql}craft_profit DESC LIMIT {limit} OFFSET {offset}"
-            )
-            message = message_builder.message_builder(location, sales_data, no_craft)
-            discord.discord_message_update(message_id, message)
+            message_data = MessageBuilder(logging_config)
+            message_data.message_id = message_id
+            message_data.sql_dict["offset"] = offset
+            message_data_queue.append(message_data)
             offset += 20
     elif no_craft:
         if len(discord_config['message_ids']) > 1:
             message_ids_middle = len(discord_config['message_ids']) // 2
             for message_id in discord_config['message_ids'][:message_ids_middle]:
-                sales_data = location_db.return_query(
-                    f"{base_sql}craft_profit DESC LIMIT {limit} OFFSET {offset}"
-                )
-                message = message_builder.message_builder(location, sales_data, no_craft)
-                discord.discord_message_update(message_id, message)
+                message_data = MessageBuilder(logging_config)
+                message_data.message_id = message_id
+                message_data.sql_dict["offset"] = offset
+                message_data_queue.append(message_data)
                 offset += 20
-
             offset = 0
             for message_id in discord_config['message_ids'][message_ids_middle:]:
-                sales_data = location_db.return_query(
-                    f"{base_sql}ave_cost DESC LIMIT {limit} OFFSET {offset}"
-                )
-                message = message_builder.message_builder(location, sales_data, no_craft)
-                discord.discord_message_update(message_id, message)
+                message_data = MessageBuilder(logging_config)
+                message_data.message_id = message_id
+                message_data.sql_dict["type"] = "ave_cost"
+                message_data.sql_dict["offset"] = offset
+                message_data.no_craft = no_craft
+                message_data_queue.append(message_data)
                 offset += 20
 
         elif len(discord_config['message_ids']) == 1:
-            for message_id in discord_config['message_ids']:
-                sales_data = location_db.return_query(
-                    f"{base_sql}craft_profit DESC LIMIT {limit} OFFSET {offset}"
-                )
-                message = message_builder.message_builder(location, sales_data, no_craft)
-                discord.discord_message_update(message_id, message)
-                offset += 20
+            message_data = MessageBuilder(logging_config)
+            message_data.message_id = discord_config['message_ids'][0]
+            message_data_queue.append(message_data)
 
-            sales_data = location_db.return_query(
-                f"{base_sql}ave_cost DESC LIMIT {limit}"
-            )
-            message = message_builder.message_builder(location, sales_data, no_craft)
-            discord.discord_message_create(message)
+            message_data = MessageBuilder(logging_config)
+            message_data.sql_dict["type"] = "ave_cost"
+            message_data.no_craft = no_craft
+            message_data_queue.append(message_data)
+
+    discord = DiscordHandler(logging_config)
+    for message_data in message_data_queue:
+        message_data.message_data_builder(location_db, main_config['min_avg_sales_per_day'])
+        discord.discord_queue_handler(tuple((message_data.message_builder(location))
+                                            ))
 
 
 def main():
