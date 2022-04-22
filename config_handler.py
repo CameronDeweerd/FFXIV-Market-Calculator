@@ -82,6 +82,7 @@ class ConfigHandler:
         self.parser['MAIN']['MinAvgSalesPerDay'] = '20'
         self.parser["MAIN"]['DisplayWithoutCraftCost'] = 'False'
         self.parser["MAIN"]['GatheringProfitTable'] = 'False'
+        self.parser["MAIN"]['EndlessLoop'] = 'False'
 
         self.parser.add_section('LOGGING')
         self.parser['LOGGING']['LogEnable'] = 'True'
@@ -120,7 +121,8 @@ class ConfigHandler:
                         'DisplayWithoutCraftCost', False),
                     "gathering_profit_table": self.parser["MAIN"].getboolean(
                         'GatheringProfitTable', False)
-                }
+                },
+                "endless_loop": self.parser["MAIN"].getboolean('EndlessLoop', False)
             }
         except Exception as err:
             self.ffxiv_logger.error("MAIN Config was invalid, setting back to defaults: %i", {err})
@@ -133,6 +135,7 @@ class ConfigHandler:
             self.parser["MAIN"]['MinAvgSalesPerDay'] = '20'
             self.parser["MAIN"]['DisplayWithoutCraftCost'] = 'False'
             self.parser["MAIN"]['GatheringProfitTable'] = 'False'
+            self.parser["MAIN"]['EndlessLoop'] = 'False'
             with open(self.configfile, 'w', encoding='utf-8') as configfile:
                 self.parser.write(configfile)
 

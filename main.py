@@ -386,6 +386,7 @@ def discord_webhook(main_config, discord_config, location_db, location, extra_ta
 def main():
     """Main function"""
     main_config = config.parse_main_config()
+    endless_loop = main_config["endless_loop"]
     marketboard_type = main_config["marketboard_type"]
     result_quantity = int(main_config["result_quantity"])
     update_quantity = int(main_config["update_quantity"])
@@ -437,6 +438,13 @@ def main():
     else:
         FFXIV_LOGGER.info('Discord Disabled in Config')
 
+    FFXIV_LOGGER.info("End of loop")
+    return endless_loop
+
 
 if __name__ == '__main__':
-    main()
+    loop = main()
+    while loop:
+        FFXIV_LOGGER.info("Sleeping 10-minutes before next loop begins")
+        time.sleep(600)
+        loop = main()
