@@ -10,6 +10,9 @@ It looks both at the profit per item and the daily sales of a given item.
 3) Using the recipe database, calculate the cost to craft and average profit
 4) Output table of the top 50 most profitable items to craft (w/ optional criteria of minimum sales/day)
 
+## !!! WARNING !!!
+Upgrading to version including Gatherers profit table (22/04/22) requires deleting and recreating DB's
+
 ## Usage in Local Setup with CLI
 ### Prerequisites and Notes
 - Python3 (Tested with >3.10)

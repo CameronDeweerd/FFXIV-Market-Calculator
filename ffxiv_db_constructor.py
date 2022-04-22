@@ -21,9 +21,9 @@ def filter_marketable_items(items, marketable_ids):
     """
     marketable_items = [None, (
         'item_num', 'name', 'ave_cost', 'regular_sale_velocity', 'ave_nq_cost', 'nq_sale_velocity',
-        'ave_hq_cost', 'hq_sale_velocity'), (
+        'ave_hq_cost', 'hq_sale_velocity', 'gatherable'), (
         'INTEGER PRIMARY KEY', 'TEXT', 'INTEGER', 'REAL', 'INTEGER', 'REAL',
-        'INTEGER', 'REAL')]
+        'INTEGER', 'REAL', 'TEXT DEFAULT "False" NOT NULL')]
     line_concatenate = []
     for line in items[3:]:
         split_line = line_concatenate + line.split(',')
@@ -32,7 +32,7 @@ def filter_marketable_items(items, marketable_ids):
             if split_line[0] in marketable_ids:
                 marketable_items.append((split_line[0], split_line[len(split_line) - 88],
                                          'NULL', 'NULL', 'NULL',
-                                         'NULL', 'NULL', 'NULL'))
+                                         'NULL', 'NULL', 'NULL', 'False'))
         else:
             line_concatenate = split_line
     return marketable_items
@@ -122,6 +122,9 @@ class FfxivDbCreation:
 
         self.csv_to_db(marketable_items, 'item')
         print('item table created')
+
+        self.add_gatherable()
+        print("gatherable flags added to item table")
 
         self.csv_to_db(marketable_recipes, 'recipe')
         print('recipe table created')
@@ -303,8 +306,22 @@ class FfxivDbCreation:
         state[1] = tuple(state[1].split(','))
         state[2] = tuple(state[2].split(','))
         state[3] = tuple(state[3].split(','))
-        print(state)
         return state
+
+    def add_gatherable(self):
+        """
+        Marks gatherable items in item table
+        """
+        gatherable_id_data = self.get_data_from_url("https://raw.githubusercontent.com"
+                                                    "/xivapi/ffxiv-datamining/master/csv/"
+                                                    "GatheringItem.csv")
+        gatherable_items = []
+        for item in gatherable_id_data[3:]:
+            item_data = item.split(",")
+            if item_data[3] == "True":
+                gatherable_items.append(tuple((item_data[1],)))
+        self.database.execute_query_many(
+            "UPDATE item SET gatherable = 'True' WHERE item_num = ?", gatherable_items)
 
     # function used to convert original files into the DB
     def csv_to_db(self, csv_data, table_name):

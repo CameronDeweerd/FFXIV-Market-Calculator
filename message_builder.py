@@ -33,6 +33,7 @@ class MessageBuilder:  # pylint: disable=too-few-public-methods
             "offset": 0
         }
         self.no_craft = False
+        self.gatherable = False
         self.results = ""
 
     def message_data_builder(self, location_db, sale_velocity):
@@ -45,15 +46,27 @@ class MessageBuilder:  # pylint: disable=too-few-public-methods
             sale_velocity : int
                 Minimum number of sales per day to retrieve
         """
-        self.results = location_db.return_query(
-            f"SELECT name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft "
-            f"FROM item "
-            f"WHERE regular_sale_velocity >= {sale_velocity} AND "
-            f"item_num IN ("
-            f"SELECT item_result FROM recipe WHERE recipe_level_table <= 1000"
-            f") ORDER BY {self.sql_dict['data_type']} DESC LIMIT {self.sql_dict['limit']} "
-            f"OFFSET {self.sql_dict['offset']}"
-        )
+        if self.gatherable:
+            self.results = location_db.return_query(
+                f"SELECT name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft "
+                f"FROM item "
+                f"WHERE gatherable = 'True' AND "
+                f"regular_sale_velocity >= {sale_velocity} AND "
+                f"item_num IN ("
+                f"SELECT item_result FROM recipe WHERE recipe_level_table <= 1000"
+                f") ORDER BY {self.sql_dict['data_type']} DESC LIMIT {self.sql_dict['limit']} "
+                f"OFFSET {self.sql_dict['offset']}"
+            )
+        else:
+            self.results = location_db.return_query(
+                f"SELECT name, craft_profit, regular_sale_velocity, ave_cost, cost_to_craft "
+                f"FROM item "
+                f"WHERE regular_sale_velocity >= {sale_velocity} AND "
+                f"item_num IN ("
+                f"SELECT item_result FROM recipe WHERE recipe_level_table <= 1000"
+                f") ORDER BY {self.sql_dict['data_type']} DESC LIMIT {self.sql_dict['limit']} "
+                f"OFFSET {self.sql_dict['offset']}"
+            )
 
     def message_builder(self, location):
         """
@@ -66,6 +79,11 @@ class MessageBuilder:  # pylint: disable=too-few-public-methods
         if self.no_craft:
             message_header = (
                 f"*(No Craft Cost)* **Data from {location} > 2 avg daily sales @ "
+                f"{self.update_time}**\n```"
+            )
+        elif self.gatherable:
+            message_header = (
+                f"*(Gatherables)* **Data from {location} > 2 avg daily sales @ "
                 f"{self.update_time}**\n```"
             )
         else:

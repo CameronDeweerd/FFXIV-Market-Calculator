@@ -283,7 +283,7 @@ def update(location_db, location, start_id, update_quantity):
     print("Cost to Craft Updated")
 
 
-def profit_table(location_db, location, result_quantity, velocity=10, no_craft=False):
+def profit_table(location_db, location, result_quantity, extra_tables, velocity=10):
     """
     Print the profit tables to the console.
 
@@ -302,18 +302,18 @@ def profit_table(location_db, location, result_quantity, velocity=10, no_craft=F
     print("\n\n")
     message_data = MessageBuilder(logging_config)
     message_data.sql_dict["limit"] = result_quantity
-    message_data.no_craft = no_craft
     message_data.message_data_builder(location_db, velocity)
     message = message_data.message_builder(location)[1]
     print(message)
-    if no_craft:
+    if extra_tables["display_without_craft_cost"]:
         message_data.sql_dict["type"] = "ave_cost"
+        message_data.no_craft = extra_tables["display_without_craft_cost"]
         message_data.message_data_builder(location_db, velocity)
         message = message_data.message_builder(location)[1]
         print(message)
 
 
-def discord_webhook(main_config, discord_config, location_db, location, no_craft=False):
+def discord_webhook(main_config, discord_config, location_db, location, extra_tables):
     """
     Function for sending the results to a Discord Webhook.
 
@@ -326,54 +326,56 @@ def discord_webhook(main_config, discord_config, location_db, location, no_craft
             Database object for performing SQL queries
         location : str
             World/DC Location to pull
-        no_craft : bool
-            Whether to also display most profitable without crafting costs
+        extra_tables : dict
+            Dictionary of bools, whether to include extra profit tables
     """
     offset = 0
     message_data_queue = []
-    if len(discord_config['message_ids']) == 0:
+    if len(discord_config['default_message_ids']) == 0:
         message_data = MessageBuilder(logging_config)
         message_data_queue.append(message_data)
-        if no_craft:
-            message_data = MessageBuilder(logging_config)
-            message_data.sql_dict["data_type"] = "ave_cost"
-            message_data.no_craft = no_craft
-            message_data_queue.append(message_data)
-    elif not no_craft:
-        for message_id in discord_config['message_ids']:
+    else:
+        offset = 0
+        for message_id in discord_config['default_message_ids']:
             message_data = MessageBuilder(logging_config)
             message_data.message_id = message_id
             message_data.sql_dict["offset"] = offset
             message_data_queue.append(message_data)
             offset += 20
-    elif no_craft:
-        if len(discord_config['message_ids']) > 1:
-            message_ids_middle = len(discord_config['message_ids']) // 2
-            for message_id in discord_config['message_ids'][:message_ids_middle]:
-                message_data = MessageBuilder(logging_config)
-                message_data.message_id = message_id
-                message_data.sql_dict["offset"] = offset
-                message_data_queue.append(message_data)
-                offset += 20
-            offset = 0
-            for message_id in discord_config['message_ids'][message_ids_middle:]:
-                message_data = MessageBuilder(logging_config)
-                message_data.message_id = message_id
-                message_data.sql_dict["type"] = "ave_cost"
-                message_data.sql_dict["offset"] = offset
-                message_data.no_craft = no_craft
-                message_data_queue.append(message_data)
-                offset += 20
 
-        elif len(discord_config['message_ids']) == 1:
+    if extra_tables["display_without_craft_cost"] and len(
+            discord_config['no_craft_message_ids']) == 0:
+        message_data = MessageBuilder(logging_config)
+        message_data.sql_dict["data_type"] = "ave_cost"
+        message_data.no_craft = extra_tables["display_without_craft_cost"]
+        message_data_queue.append(message_data)
+    elif extra_tables["display_without_craft_cost"]:
+        offset = 0
+        for message_id in discord_config['no_craft_message_ids']:
             message_data = MessageBuilder(logging_config)
-            message_data.message_id = discord_config['message_ids'][0]
+            message_data.message_id = message_id
+            message_data.sql_dict["offset"] = offset
+            message_data.sql_dict["data_type"] = "ave_cost"
+            message_data.no_craft = extra_tables["display_without_craft_cost"]
             message_data_queue.append(message_data)
+            offset += 20
 
+    if extra_tables["gathering_profit_table"] and len(
+            discord_config['gatherable_message_ids']) == 0:
+        message_data = MessageBuilder(logging_config)
+        message_data.sql_dict["data_type"] = "ave_cost"
+        message_data.gatherable = extra_tables["gathering_profit_table"]
+        message_data_queue.append(message_data)
+    elif extra_tables["gathering_profit_table"]:
+        offset = 0
+        for message_id in discord_config['gatherable_message_ids']:
             message_data = MessageBuilder(logging_config)
-            message_data.sql_dict["type"] = "ave_cost"
-            message_data.no_craft = no_craft
+            message_data.message_id = message_id
+            message_data.sql_dict["offset"] = offset
+            message_data.sql_dict["data_type"] = "ave_cost"
+            message_data.gatherable = extra_tables["gathering_profit_table"]
             message_data_queue.append(message_data)
+            offset += 20
 
     discord = DiscordHandler(logging_config)
     for message_data in message_data_queue:
@@ -388,7 +390,7 @@ def main():
     result_quantity = int(main_config["result_quantity"])
     update_quantity = int(main_config["update_quantity"])
     min_avg_sales_per_day = main_config["min_avg_sales_per_day"]
-    display_without_craft_cost = main_config["display_without_craft_cost"]
+    extra_tables = main_config["extra_tables"]
     location_switch = {
         "World": main_config["world"],
         "Datacentre": main_config["datacentre"],
@@ -425,15 +427,13 @@ def main():
             f'marketboard_type LIKE "{marketboard_type}" AND location LIKE "{location}"'
         )
 
-    profit_table(location_db, location, result_quantity, min_avg_sales_per_day)
-    if display_without_craft_cost:
-        profit_table(location_db, location, result_quantity,
-                     min_avg_sales_per_day, no_craft=display_without_craft_cost)
+    profit_table(location_db, location, result_quantity, extra_tables,
+                 min_avg_sales_per_day)
 
     discord_config = config.parse_discord_config()
     if discord_config['discord_enable']:
         discord_webhook(main_config, discord_config, location_db,
-                        location, no_craft=display_without_craft_cost)
+                        location, extra_tables)
     else:
         FFXIV_LOGGER.info('Discord Disabled in Config')
 
