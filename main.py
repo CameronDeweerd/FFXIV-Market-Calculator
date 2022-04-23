@@ -68,7 +68,7 @@ def get_sale_nums(item_number, location):
         sales_dict["regular_sale_velocity"] = round(data["regularSaleVelocity"], 1)
         sales_dict["nq_sale_velocity"] = round(data["nqSaleVelocity"], 1)
         sales_dict["hq_sale_velocity"] = round(data["hqSaleVelocity"], 1)
-        if math.ceil(sales_dict["regular_sale_velocity"]) == 0:
+        if len(data["entries"]) == 0 and math.ceil(sales_dict["regular_sale_velocity"]) == 0:
             return sales_dict, 1
     except Exception as err:
         FFXIV_LOGGER.debug(data)
@@ -76,6 +76,7 @@ def get_sale_nums(item_number, location):
         return sales_dict, 0
 
     sales = data["entries"]
+    FFXIV_LOGGER.debug(sales_dict)
     sales_dict = sales_calculations(sales_dict, sales)
     return sales_dict, 1
 
@@ -117,19 +118,19 @@ def sales_calculations(sales_dict, sales):
     try:
         sales_dict["ave_nq_cost"] = int(total_nq_cost / total_nq_sales)
     except ZeroDivisionError:
-        sales_dict["ave_nq_cost"] = None
+        sales_dict["ave_nq_cost"] = 0
 
     try:
         sales_dict["ave_hq_cost"] = int(total_hq_cost / total_hq_sales)
     except ZeroDivisionError:
-        sales_dict["ave_hq_cost"] = None
+        sales_dict["ave_hq_cost"] = 0
 
     try:
         sales_dict["ave_cost"] = int(
             (total_nq_cost + total_hq_cost) / (total_nq_sales + total_hq_sales)
         )
     except ZeroDivisionError:
-        sales_dict["ave_cost"] = None
+        sales_dict["ave_cost"] = 0
 
     return sales_dict
 
@@ -149,7 +150,6 @@ def get_sale_data(item_number, location, entries=5000):
     request_response = requests.get(
         f'https://universalis.app/api/v2/history/{location}/{item_number}'
         f'?entriesToReturn={entries}'
-        f'&statsWithin=14'
     )
     try:
         data = json.loads(request_response.content.decode('utf-8'))
@@ -283,7 +283,8 @@ def update(location_db, location, start_id, update_quantity):
     print("Cost to Craft Updated")
 
 
-def profit_table(location_db, location, result_quantity, extra_tables, velocity=10):
+# def profit_table(location_db, location, result_quantity, extra_tables, velocity=10):
+def profit_table(location_db, location, main_config):
     """
     Print the profit tables to the console.
 
@@ -292,23 +293,29 @@ def profit_table(location_db, location, result_quantity, extra_tables, velocity=
             Database object for performing SQL queries
         location : str
             World/DC Location to pull
-        result_quantity : int
-            How many results to print in the output table
-        velocity : int
-            Minimum sales per day to display
-        no_craft : bool
-            Whether to also display most profitable without crafting costs
+        main_config : dict
+            Main configuration values
     """
     print("\n\n")
     message_data = MessageBuilder(logging_config)
-    message_data.sql_dict["limit"] = result_quantity
-    message_data.message_data_builder(location_db, velocity)
+    message_data.sql_dict["limit"] = main_config["result_quantity"]
+    message_data.message_data_builder(location_db, main_config["min_avg_sales_per_day"])
     message = message_data.message_builder(location)[1]
     print(message)
-    if extra_tables["display_without_craft_cost"]:
-        message_data.sql_dict["type"] = "ave_cost"
-        message_data.no_craft = extra_tables["display_without_craft_cost"]
-        message_data.message_data_builder(location_db, velocity)
+    if main_config["extra_tables"]["display_without_craft_cost"]:
+        message_data = MessageBuilder(logging_config)
+        message_data.sql_dict["data_type"] = "ave_cost"
+        message_data.no_craft = main_config["extra_tables"]["display_without_craft_cost"]
+        message_data.message_data_builder(location_db, main_config["min_avg_sales_per_day"])
+        message_data.sql_dict["limit"] = main_config["result_quantity"]
+        message = message_data.message_builder(location)[1]
+        print(message)
+    if main_config["extra_tables"]["gathering_profit_table"]:
+        message_data = MessageBuilder(logging_config)
+        message_data.sql_dict["data_type"] = "ave_cost"
+        message_data.gatherable = main_config["extra_tables"]["gathering_profit_table"]
+        message_data.message_data_builder(location_db, main_config["min_avg_sales_per_day"])
+        message_data.sql_dict["limit"] = main_config["result_quantity"]
         message = message_data.message_builder(location)[1]
         print(message)
 
@@ -388,9 +395,7 @@ def main():
     main_config = config.parse_main_config()
     endless_loop = main_config["endless_loop"]
     marketboard_type = main_config["marketboard_type"]
-    result_quantity = int(main_config["result_quantity"])
     update_quantity = int(main_config["update_quantity"])
-    min_avg_sales_per_day = main_config["min_avg_sales_per_day"]
     extra_tables = main_config["extra_tables"]
     location_switch = {
         "World": main_config["world"],
@@ -428,8 +433,7 @@ def main():
             f'marketboard_type LIKE "{marketboard_type}" AND location LIKE "{location}"'
         )
 
-    profit_table(location_db, location, result_quantity, extra_tables,
-                 min_avg_sales_per_day)
+    profit_table(location_db, location, main_config)
 
     discord_config = config.parse_discord_config()
     if discord_config['discord_enable']:
@@ -446,5 +450,5 @@ if __name__ == '__main__':
     loop = main()
     while loop:
         FFXIV_LOGGER.info("Sleeping 10-minutes before next loop begins")
-        time.sleep(600)
+        time.sleep(300)
         loop = main()
