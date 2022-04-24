@@ -43,12 +43,12 @@ def get_sale_nums(item_number, location):
             Global database to store shared values
     """
     sales_dict = {
-        "regular_sale_velocity": None,
-        "nq_sale_velocity": None,
-        "hq_sale_velocity": None,
-        "ave_nq_cost": None,
-        "ave_hq_cost": None,
-        "ave_cost": None
+        "regular_sale_velocity": 0,
+        "nq_sale_velocity": 0,
+        "hq_sale_velocity": 0,
+        "ave_nq_cost": 0,
+        "ave_hq_cost": 0,
+        "ave_cost": 0
     }
 
     data, request_response = get_sale_data(item_number, location)
@@ -230,6 +230,8 @@ def update_ingredient_costs(location_db):
                     ave_cost = 9999999
                 if ave_cost == "None":
                     ave_cost = 9999999
+                elif ave_cost <= 0:
+                    ave_cost = 9999999
             else:
                 ave_cost = 0
             update_list.append(tuple((ave_cost, num[0])))
@@ -299,34 +301,32 @@ def profit_table(location_db, location, main_config):
     print("\n\n")
     message_data = MessageBuilder(logging_config)
     message_data.sql_dict["limit"] = main_config["result_quantity"]
-    message_data.message_data_builder(location_db, main_config["min_avg_sales_per_day"])
+    message_data.message_data_builder(location_db)
     message = message_data.message_builder(location)[1]
     print(message)
     if main_config["extra_tables"]["display_without_craft_cost"]:
         message_data = MessageBuilder(logging_config)
-        message_data.sql_dict["data_type"] = "ave_cost"
+        message_data.sql_dict["data_type"] = "raw_profit_per_day"
         message_data.no_craft = main_config["extra_tables"]["display_without_craft_cost"]
-        message_data.message_data_builder(location_db, main_config["min_avg_sales_per_day"])
         message_data.sql_dict["limit"] = main_config["result_quantity"]
+        message_data.message_data_builder(location_db)
         message = message_data.message_builder(location)[1]
         print(message)
     if main_config["extra_tables"]["gathering_profit_table"]:
         message_data = MessageBuilder(logging_config)
-        message_data.sql_dict["data_type"] = "ave_cost"
+        message_data.sql_dict["data_type"] = "raw_profit_per_day"
         message_data.gatherable = main_config["extra_tables"]["gathering_profit_table"]
-        message_data.message_data_builder(location_db, main_config["min_avg_sales_per_day"])
         message_data.sql_dict["limit"] = main_config["result_quantity"]
+        message_data.message_data_builder(location_db)
         message = message_data.message_builder(location)[1]
         print(message)
 
 
-def discord_webhook(main_config, discord_config, location_db, location, extra_tables):
+def discord_webhook(discord_config, location_db, location, extra_tables):
     """
     Function for sending the results to a Discord Webhook.
 
     Parameters:
-        main_config : dict
-            Main configuration values
         discord_config : dict
             Discord configuration value
         location_db : SqlManager
@@ -353,7 +353,7 @@ def discord_webhook(main_config, discord_config, location_db, location, extra_ta
     if extra_tables["display_without_craft_cost"] and len(
             discord_config['no_craft_message_ids']) == 0:
         message_data = MessageBuilder(logging_config)
-        message_data.sql_dict["data_type"] = "ave_cost"
+        message_data.sql_dict["data_type"] = "raw_profit_per_day"
         message_data.no_craft = extra_tables["display_without_craft_cost"]
         message_data_queue.append(message_data)
     elif extra_tables["display_without_craft_cost"]:
@@ -362,7 +362,7 @@ def discord_webhook(main_config, discord_config, location_db, location, extra_ta
             message_data = MessageBuilder(logging_config)
             message_data.message_id = message_id
             message_data.sql_dict["offset"] = offset
-            message_data.sql_dict["data_type"] = "ave_cost"
+            message_data.sql_dict["data_type"] = "raw_profit_per_day"
             message_data.no_craft = extra_tables["display_without_craft_cost"]
             message_data_queue.append(message_data)
             offset += 20
@@ -370,7 +370,7 @@ def discord_webhook(main_config, discord_config, location_db, location, extra_ta
     if extra_tables["gathering_profit_table"] and len(
             discord_config['gatherable_message_ids']) == 0:
         message_data = MessageBuilder(logging_config)
-        message_data.sql_dict["data_type"] = "ave_cost"
+        message_data.sql_dict["data_type"] = "raw_profit_per_day"
         message_data.gatherable = extra_tables["gathering_profit_table"]
         message_data_queue.append(message_data)
     elif extra_tables["gathering_profit_table"]:
@@ -379,14 +379,14 @@ def discord_webhook(main_config, discord_config, location_db, location, extra_ta
             message_data = MessageBuilder(logging_config)
             message_data.message_id = message_id
             message_data.sql_dict["offset"] = offset
-            message_data.sql_dict["data_type"] = "ave_cost"
+            message_data.sql_dict["data_type"] = "raw_profit_per_day"
             message_data.gatherable = extra_tables["gathering_profit_table"]
             message_data_queue.append(message_data)
             offset += 20
 
     discord = DiscordHandler(logging_config)
     for message_data in message_data_queue:
-        message_data.message_data_builder(location_db, main_config['min_avg_sales_per_day'])
+        message_data.message_data_builder(location_db)
         discord.discord_queue_handler(tuple((message_data.message_builder(location))))
 
 
@@ -437,7 +437,7 @@ def main():
 
     discord_config = config.parse_discord_config()
     if discord_config['discord_enable']:
-        discord_webhook(main_config, discord_config, location_db,
+        discord_webhook(discord_config, location_db,
                         location, extra_tables)
     else:
         FFXIV_LOGGER.info('Discord Disabled in Config')

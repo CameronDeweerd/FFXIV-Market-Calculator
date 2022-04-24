@@ -28,7 +28,7 @@ class MessageBuilder:  # pylint: disable=too-few-public-methods
         self.update_time = datetime.now().strftime('%d/%m/%Y %H:%M')
         self.message_id = 0
         self.sql_dict = {
-            "data_type": "craft_profit",
+            "data_type": "craft_profit_per_day",
             "limit": 20,
             "offset": 0
         }
@@ -36,7 +36,7 @@ class MessageBuilder:  # pylint: disable=too-few-public-methods
         self.gatherable = False
         self.results = ""
 
-    def message_data_builder(self, location_db, sale_velocity):
+    def message_data_builder(self, location_db):
         """
         Queries the database and builds the message data for console or Discord.
 
@@ -48,96 +48,20 @@ class MessageBuilder:  # pylint: disable=too-few-public-methods
         """
         if self.gatherable:
             self.results = location_db.return_query(
-                f'SELECT * FROM ( SELECT name, craft_profit, regular_sale_velocity, ave_cost, '
-                f'cost_to_craft FROM item WHERE gatherable LIKE "{self.gatherable}" AND '
-                f'regular_sale_velocity >= {sale_velocity} AND regular_sale_velocity NOT LIKE '
-                f'"NULL" AND regular_sale_velocity IS NOT NULL AND {self.sql_dict["data_type"]} '
-                f'NOT LIKE "NULL" AND {self.sql_dict["data_type"]} IS NOT NULL ORDER BY '
-                f'{self.sql_dict["data_type"]} DESC LIMIT {self.sql_dict["limit"]} OFFSET '
-                f'{self.sql_dict["offset"]} ) UNION SELECT * FROM ( SELECT name, craft_profit, '
-                f'regular_sale_velocity, ave_cost, cost_to_craft FROM item WHERE gatherable LIKE '
-                f'"{self.gatherable}" AND regular_sale_velocity >= 0 AND regular_sale_velocity < '
-                f'{sale_velocity} AND regular_sale_velocity IS NOT NULL AND regular_sale_velocity '
-                f'NOT LIKE "NULL" AND {self.sql_dict["data_type"]} NOT LIKE "NULL" AND '
-                f'{self.sql_dict["data_type"]} IS NOT NULL ORDER BY {self.sql_dict["data_type"]} '
-                f'DESC LIMIT CASE WHEN {self.sql_dict["limit"]}-( SELECT COUNT(*) FROM item '
-                f'WHERE gatherable LIKE "{self.gatherable}" AND regular_sale_velocity >= '
-                f'{sale_velocity} AND regular_sale_velocity NOT LIKE "NULL" AND '
-                f'regular_sale_velocity IS NOT NULL AND {self.sql_dict["data_type"]} NOT LIKE '
-                f'"NULL" AND {self.sql_dict["data_type"]} IS NOT NULL ORDER BY '
-                f'{self.sql_dict["data_type"]} DESC LIMIT {self.sql_dict["limit"]} OFFSET '
-                f'{self.sql_dict["offset"]} ) < 0 THEN 0 ELSE {self.sql_dict["limit"]}-('
-                f'SELECT COUNT(*) FROM item WHERE gatherable LIKE "{self.gatherable}" AND '
-                f'regular_sale_velocity >= {sale_velocity} AND regular_sale_velocity NOT LIKE '
-                f'"NULL" AND regular_sale_velocity IS NOT NULL AND {self.sql_dict["data_type"]} '
-                f'NOT LIKE "NULL" AND {self.sql_dict["data_type"]} IS NOT NULL ORDER BY '
-                f'{self.sql_dict["data_type"]} DESC LIMIT {self.sql_dict["limit"]} OFFSET '
-                f'{self.sql_dict["offset"]} ) END OFFSET {self.sql_dict["offset"]} ) UNION '
-                f'SELECT * FROM ( SELECT name, craft_profit, regular_sale_velocity, ave_cost, '
-                f'cost_to_craft FROM item WHERE gatherable LIKE "{self.gatherable}" AND '
-                f'regular_sale_velocity >= 0 ORDER BY {self.sql_dict["data_type"]} DESC LIMIT '
-                f'CASE WHEN {self.sql_dict["limit"]}-( SELECT COUNT(*) FROM item WHERE gatherable '
-                f'LIKE "{self.gatherable}" AND regular_sale_velocity >= 0 AND '
-                f'regular_sale_velocity NOT LIKE "NULL" AND regular_sale_velocity IS NOT NULL AND '
-                f'{self.sql_dict["data_type"]} NOT LIKE "NULL" AND {self.sql_dict["data_type"]} '
-                f'IS NOT NULL ORDER BY {self.sql_dict["data_type"]} DESC LIMIT '
-                f'{self.sql_dict["limit"]} OFFSET {self.sql_dict["offset"]} ) < 0 THEN 0 ELSE '
-                f'{self.sql_dict["limit"]}-( SELECT COUNT(*) FROM item WHERE gatherable LIKE '
-                f'"{self.gatherable}" AND regular_sale_velocity >= 0 AND regular_sale_velocity '
-                f'NOT LIKE "NULL" AND regular_sale_velocity IS NOT NULL AND '
-                f'{self.sql_dict["data_type"]} NOT LIKE "NULL" AND {self.sql_dict["data_type"]} '
-                f'IS NOT NULL ORDER BY {self.sql_dict["data_type"]} DESC LIMIT '
-                f'{self.sql_dict["limit"]} OFFSET {self.sql_dict["offset"]} ) END OFFSET '
-                f'{self.sql_dict["offset"]} ) ORDER BY {self.sql_dict["data_type"]} DESC LIMIT '
-                f'{self.sql_dict["limit"]}'
+                f'SELECT name, craft_profit, regular_sale_velocity, ave_cost, raw_profit_per_day, '
+                f'cost_to_craft, craft_profit_per_day FROM item WHERE '
+                f'gatherable LIKE "{self.gatherable}" '
+                f'ORDER BY {self.sql_dict["data_type"]} DESC '
+                f'LIMIT {self.sql_dict["limit"]} OFFSET {self.sql_dict["offset"]}'
             )
 
         else:
             self.results = location_db.return_query(
-                f'SELECT * FROM (SELECT name, craft_profit, regular_sale_velocity, ave_cost, '
-                f'cost_to_craft FROM item WHERE regular_sale_velocity >= {sale_velocity} AND '
-                f'regular_sale_velocity NOT LIKE "NULL" AND regular_sale_velocity IS NOT NULL AND '
-                f'{self.sql_dict["data_type"]} NOT LIKE "NULL" AND {self.sql_dict["data_type"]} '
-                f'IS NOT NULL AND item_num IN (SELECT item_result FROM recipe WHERE '
-                f'recipe_level_table <= 1000) ORDER BY {self.sql_dict["data_type"]} DESC LIMIT '
-                f'{self.sql_dict["limit"]} OFFSET {self.sql_dict["offset"]}) UNION '
-                f'SELECT * FROM (SELECT name, craft_profit, regular_sale_velocity, ave_cost, '
-                f'cost_to_craft FROM item WHERE regular_sale_velocity >= 0 AND '
-                f'regular_sale_velocity < {sale_velocity} AND regular_sale_velocity IS NOT NULL '
-                f'AND regular_sale_velocity NOT LIKE "NULL" AND {self.sql_dict["data_type"]} '
-                f'NOT LIKE "NULL" AND {self.sql_dict["data_type"]} IS NOT NULL AND item_num IN '
-                f'(SELECT item_result FROM recipe WHERE recipe_level_table <= 1000) ORDER BY '
-                f'{self.sql_dict["data_type"]} DESC LIMIT CASE WHEN {self.sql_dict["limit"]}-'
-                f'(SELECT COUNT(*) FROM item WHERE regular_sale_velocity >= {sale_velocity} AND '
-                f'regular_sale_velocity NOT LIKE "NULL" AND regular_sale_velocity IS NOT NULL AND '
-                f'{self.sql_dict["data_type"]} NOT LIKE "NULL" AND {self.sql_dict["data_type"]} '
-                f'IS NOT NULL AND item_num IN (SELECT item_result FROM recipe WHERE '
-                f'recipe_level_table <= 1000) ORDER BY ave_cost DESC LIMIT '
-                f'{self.sql_dict["limit"]} OFFSET {self.sql_dict["offset"]}) < 0 THEN 0 ELSE '
-                f'{self.sql_dict["limit"]}-(SELECT COUNT(*) FROM item WHERE '
-                f'regular_sale_velocity >= {sale_velocity} AND regular_sale_velocity NOT LIKE '
-                f'"NULL" AND regular_sale_velocity IS NOT NULL AND {self.sql_dict["data_type"]} '
-                f'NOT LIKE "NULL" AND {self.sql_dict["data_type"]} IS NOT NULL AND item_num IN '
-                f'(SELECT item_result FROM recipe WHERE recipe_level_table <= 1000) ORDER BY '
-                f'{self.sql_dict["data_type"]} DESC LIMIT {self.sql_dict["limit"]} OFFSET '
-                f'{self.sql_dict["offset"]}) END OFFSET {self.sql_dict["offset"]}) UNION '
-                f'SELECT * FROM (SELECT name, craft_profit, regular_sale_velocity, ave_cost, '
-                f'cost_to_craft FROM item WHERE regular_sale_velocity >= 0 ORDER BY '
-                f'{self.sql_dict["data_type"]} DESC LIMIT CASE WHEN {self.sql_dict["limit"]}-('
-                f'SELECT COUNT(*) FROM item WHERE regular_sale_velocity >= 0 AND '
-                f'regular_sale_velocity NOT LIKE "NULL" AND regular_sale_velocity IS NOT NULL AND '
-                f'{self.sql_dict["data_type"]} NOT LIKE "NULL" AND {self.sql_dict["data_type"]} '
-                f'IS NOT NULL AND item_num IN (SELECT item_result FROM recipe WHERE '
-                f'recipe_level_table <= 1000) ORDER BY {self.sql_dict["data_type"]} DESC LIMIT '
-                f'{self.sql_dict["limit"]} OFFSET {self.sql_dict["offset"]}) < 0 THEN 0 ELSE '
-                f'{self.sql_dict["limit"]}-(SELECT COUNT(*) FROM item WHERE '
-                f'regular_sale_velocity >= 0 AND regular_sale_velocity NOT LIKE "NULL" AND '
-                f'regular_sale_velocity IS NOT NULL AND {self.sql_dict["data_type"]} NOT LIKE '
-                f'"NULL" AND {self.sql_dict["data_type"]} IS NOT NULL AND item_num IN (SELECT '
-                f'item_result FROM recipe WHERE recipe_level_table <= 1000) ORDER BY '
-                f'{self.sql_dict["data_type"]} DESC LIMIT {self.sql_dict["limit"]} OFFSET '
-                f'{self.sql_dict["offset"]}) END OFFSET {self.sql_dict["offset"]}) ORDER BY '
-                f'{self.sql_dict["data_type"]} DESC LIMIT {self.sql_dict["limit"]}'
+                f'SELECT name, craft_profit, regular_sale_velocity, ave_cost, raw_profit_per_day, '
+                f'cost_to_craft, craft_profit_per_day FROM item WHERE '
+                f'item_num IN (SELECT item_result FROM recipe WHERE recipe_level_table <= 1000) '
+                f'ORDER BY {self.sql_dict["data_type"]} DESC '
+                f'LIMIT {self.sql_dict["limit"]} OFFSET {self.sql_dict["offset"]}'
             )
 
     def message_builder(self, location):
@@ -150,21 +74,18 @@ class MessageBuilder:  # pylint: disable=too-few-public-methods
         """
         if self.no_craft:
             message_header = (
-                f"*(No Craft Cost)* **Data from {location} > 2 avg daily sales @ "
-                f"{self.update_time}**\n```"
+                f"*(No Craft Cost)* **Data from {location} @ {self.update_time}**\n```"
             )
         elif self.gatherable:
             message_header = (
-                f"*(Gatherables)* **Data from {location} > 2 avg daily sales @ "
-                f"{self.update_time}**\n```"
+                f"*(Gatherables)* **Data from {location} @ {self.update_time}**\n```"
             )
         else:
             message_header = (
-                f"**Data from {location} > 2 avg daily sales @ "
-                f"{self.update_time}**\n```"
+                f"**Data from {location} @ {self.update_time}**\n```"
             )
         message_footer = "```"
-        to_display = ["Name", "Profit", "Avg-Sales", "Avg-Cost", "Avg-Cft-Cost"]
+        to_display = ["Name", "Profit", "Avg-Sales", "Avg-Cost", "Prof-Per-Day", "Avg-Cft-Cost", "Cft-Prof-Day"]
         frame = pd.DataFrame(self.results)
         frame.columns = to_display
         message = message_header + frame.to_string(index=False).replace('"', '') + message_footer

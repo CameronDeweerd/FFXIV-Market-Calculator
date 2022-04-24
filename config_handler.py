@@ -79,7 +79,6 @@ class ConfigHandler:
         self.parser['MAIN']['World'] = 'Zalera'
         self.parser['MAIN']['ResultQuantity'] = '50'
         self.parser['MAIN']['UpdateQuantity'] = '0'
-        self.parser['MAIN']['MinAvgSalesPerDay'] = '20'
         self.parser["MAIN"]['DisplayWithoutCraftCost'] = 'False'
         self.parser["MAIN"]['GatheringProfitTable'] = 'False'
         self.parser["MAIN"]['EndlessLoop'] = 'False'
@@ -115,7 +114,6 @@ class ConfigHandler:
                 "update_quantity": self.parser["MAIN"].getint(
                     'UpdateQuantity', 0
                 ),
-                "min_avg_sales_per_day": self.parser["MAIN"].getint('MinAvgSalesPerDay', 20),
                 "extra_tables": {
                     "display_without_craft_cost": self.parser["MAIN"].getboolean(
                         'DisplayWithoutCraftCost', False),
@@ -132,7 +130,6 @@ class ConfigHandler:
             self.parser["MAIN"]['World'] = 'Zalera'.capitalize()
             self.parser["MAIN"]['ResultQuantity'] = '50'
             self.parser["MAIN"]['UpdateQuantity'] = '0'
-            self.parser["MAIN"]['MinAvgSalesPerDay'] = '20'
             self.parser["MAIN"]['DisplayWithoutCraftCost'] = 'False'
             self.parser["MAIN"]['GatheringProfitTable'] = 'False'
             self.parser["MAIN"]['EndlessLoop'] = 'False'
@@ -145,7 +142,6 @@ class ConfigHandler:
                 "world": 'Zalera',
                 "result_quantity": 50,
                 "update_quantity": 0,
-                "min_avg_sales_per_day": 20,
                 "extra_tables": {
                     "display_without_craft_cost": False,
                     "gathering_profit_table": False
