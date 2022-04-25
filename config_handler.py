@@ -79,8 +79,9 @@ class ConfigHandler:
         self.parser['MAIN']['World'] = 'Zalera'
         self.parser['MAIN']['ResultQuantity'] = '50'
         self.parser['MAIN']['UpdateQuantity'] = '0'
-        self.parser['MAIN']['MinAvgSalesPerDay'] = '20'
         self.parser["MAIN"]['DisplayWithoutCraftCost'] = 'False'
+        self.parser["MAIN"]['GatheringProfitTable'] = 'False'
+        self.parser["MAIN"]['EndlessLoop'] = 'False'
 
         self.parser.add_section('LOGGING')
         self.parser['LOGGING']['LogEnable'] = 'True'
@@ -90,7 +91,9 @@ class ConfigHandler:
 
         self.parser.add_section('DISCORD')
         self.parser['DISCORD']['DiscordEnable'] = 'False'
-        self.parser['DISCORD']['MessageIds'] = '[123456789123456789,123456789123456789]'
+        self.parser['DISCORD']['DefaultMessageIds'] = '[123456789123456789,123456789123456789]'
+        self.parser['DISCORD']['NoCraftMessageIds'] = '[123456789123456789,123456789123456789]'
+        self.parser['DISCORD']['GatherableMessageIds'] = '[123456789123456789,123456789123456789]'
 
         with open(self.configfile, 'w', encoding='utf-8') as configfile:
             self.parser.write(configfile)
@@ -111,9 +114,13 @@ class ConfigHandler:
                 "update_quantity": self.parser["MAIN"].getint(
                     'UpdateQuantity', 0
                 ),
-                "min_avg_sales_per_day": self.parser["MAIN"].getint('MinAvgSalesPerDay', 20),
-                "display_without_craft_cost": self.parser["MAIN"].getboolean(
-                    'DisplayWithoutCraftCost', False)
+                "extra_tables": {
+                    "display_without_craft_cost": self.parser["MAIN"].getboolean(
+                        'DisplayWithoutCraftCost', False),
+                    "gathering_profit_table": self.parser["MAIN"].getboolean(
+                        'GatheringProfitTable', False)
+                },
+                "endless_loop": self.parser["MAIN"].getboolean('EndlessLoop', False)
             }
         except Exception as err:
             self.ffxiv_logger.error("MAIN Config was invalid, setting back to defaults: %i", {err})
@@ -123,8 +130,9 @@ class ConfigHandler:
             self.parser["MAIN"]['World'] = 'Zalera'.capitalize()
             self.parser["MAIN"]['ResultQuantity'] = '50'
             self.parser["MAIN"]['UpdateQuantity'] = '0'
-            self.parser["MAIN"]['MinAvgSalesPerDay'] = '20'
             self.parser["MAIN"]['DisplayWithoutCraftCost'] = 'False'
+            self.parser["MAIN"]['GatheringProfitTable'] = 'False'
+            self.parser["MAIN"]['EndlessLoop'] = 'False'
             with open(self.configfile, 'w', encoding='utf-8') as configfile:
                 self.parser.write(configfile)
 
@@ -134,8 +142,10 @@ class ConfigHandler:
                 "world": 'Zalera',
                 "result_quantity": 50,
                 "update_quantity": 0,
-                "min_avg_sales_per_day": 20,
-                "display_without_craft_cost": False
+                "extra_tables": {
+                    "display_without_craft_cost": False,
+                    "gathering_profit_table": False
+                }
             }
         self.main_validation()
         self.ffxiv_logger.info("Main Config Loaded")
@@ -156,7 +166,7 @@ class ConfigHandler:
             }
         except Exception as err:
             self.ffxiv_logger.error(
-                "LOGGING Config was invalid, setting back to defaults: %i",{err}
+                "LOGGING Config was invalid, setting back to defaults: %i", {err}
             )
             self.parser['LOGGING']['LogEnable'] = 'True'
             self.parser['LOGGING']['LogLevel'] = 'INFO'
@@ -183,20 +193,32 @@ class ConfigHandler:
         try:
             self.config = {
                 "discord_enable": self.parser["DISCORD"].getboolean('DiscordEnable', False),
-                "message_ids": ast.literal_eval(self.parser['DISCORD'].get('MessageIds'))
+                "default_message_ids": ast.literal_eval(
+                    self.parser['DISCORD'].get('DefaultMessageIds')),
+                "no_craft_message_ids": ast.literal_eval(
+                    self.parser['DISCORD'].get('NoCraftMessageIds')),
+                "gatherable_message_ids": ast.literal_eval(
+                    self.parser['DISCORD'].get('GatherableMessageIds'))
             }
         except Exception as err:
             self.ffxiv_logger.error(
                 "DISCORD Config was invalid, setting back to defaults: %i", {err}
             )
             self.parser["DISCORD"]['DiscordEnable'] = 'False'
-            self.parser['DISCORD']['MessageIds'] = '[123456789123456789, 123456789123456789]'
+            self.parser['DISCORD']['DefaultMessageIds'] = \
+                '[123456789123456789,123456789123456789]'
+            self.parser['DISCORD']['NoCraftMessageIds'] = \
+                '[123456789123456789,123456789123456789]'
+            self.parser['DISCORD']['GatherableMessageIds'] = \
+                '[123456789123456789,123456789123456789]'
             with open(self.configfile, 'w', encoding='utf-8') as configfile:
                 self.parser.write(configfile)
 
             self.config = {
                 "discord_enable": False,
-                "message_ids": []
+                "default_message_ids": [],
+                "no_craft_message_ids": [],
+                "gatherable_message_ids": []
             }
         self.discord_validation()
         self.ffxiv_logger.info("Loaded Discord Config")
@@ -218,15 +240,14 @@ class ConfigHandler:
         type_check = all([
             isinstance(self.config["result_quantity"], int),
             isinstance(self.config["update_quantity"], int),
-            isinstance(self.config["min_avg_sales_per_day"], int),
-            isinstance(self.config["display_without_craft_cost"], bool)
+            isinstance(self.config["extra_tables"]["display_without_craft_cost"], bool),
+            isinstance(self.config["extra_tables"]["gathering_profit_table"], bool)
         ])
         value_check = all([
             self.config["marketboard_type"] in ["World", "Datacentre", "Datacenter"],
             self.config["datacentre"] in valid_datacentres,
             self.config["world"] in valid_worlds,
-            self.config["result_quantity"] > 0,
-            self.config["min_avg_sales_per_day"] > 0
+            self.config["result_quantity"] > 0
         ])
         if not type_check and value_check:
             self.ffxiv_logger.error(

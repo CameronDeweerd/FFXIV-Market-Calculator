@@ -21,9 +21,9 @@ def filter_marketable_items(items, marketable_ids):
     """
     marketable_items = [None, (
         'item_num', 'name', 'ave_cost', 'regular_sale_velocity', 'ave_nq_cost', 'nq_sale_velocity',
-        'ave_hq_cost', 'hq_sale_velocity'), (
+        'ave_hq_cost', 'hq_sale_velocity', 'gatherable'), (
         'INTEGER PRIMARY KEY', 'TEXT', 'INTEGER', 'REAL', 'INTEGER', 'REAL',
-        'INTEGER', 'REAL')]
+        'INTEGER', 'REAL', 'TEXT DEFAULT "False" NOT NULL')]
     line_concatenate = []
     for line in items[3:]:
         split_line = line_concatenate + line.split(',')
@@ -31,8 +31,7 @@ def filter_marketable_items(items, marketable_ids):
             line_concatenate = []
             if split_line[0] in marketable_ids:
                 marketable_items.append((split_line[0], split_line[len(split_line) - 88],
-                                         'NULL', 'NULL', 'NULL',
-                                         'NULL', 'NULL', 'NULL'))
+                                         0, 0, 0, 0, 0, 0, 'False'))
         else:
             line_concatenate = split_line
     return marketable_items
@@ -123,12 +122,15 @@ class FfxivDbCreation:
         self.csv_to_db(marketable_items, 'item')
         print('item table created')
 
+        self.add_gatherable()
+        print("gatherable flags added to item table")
+
         self.csv_to_db(marketable_recipes, 'recipe')
         print('recipe table created')
 
         for i in range(10):
             self.database.execute_query(
-                f"ALTER TABLE recipe ADD ingredient_cost_{i} INTEGER DEFAULT 0;"
+                f"ALTER TABLE recipe ADD ingredient_cost_{i} INTEGER DEFAULT 9999999;"
             )
 
         self.database.execute_query(
@@ -140,11 +142,17 @@ class FfxivDbCreation:
             "amount_ingredient_8 * ingredient_cost_8 + amount_ingredient_9 * ingredient_cost_9)")
 
         self.database.execute_query("ALTER TABLE item ADD cost_to_craft INTEGER DEFAULT 0;")
-        # self.db.execute_query(
-        #     f"ALTER TABLE item ADD costToCraft GENERATED ALWAYS AS (SELECT costToCraft
-        #     FROM recipe WHERE ItemResult = itemNum LIMIT 1);")
         self.database.execute_query(
-            "ALTER TABLE item ADD craft_profit GENERATED ALWAYS AS (ave_cost - cost_to_craft);"
+            "ALTER TABLE item ADD craft_profit GENERATED ALWAYS AS "
+            "(CASE cost_to_craft WHEN 0 THEN 0 ELSE ave_cost - cost_to_craft END);"
+        )
+        self.database.execute_query(
+            "ALTER TABLE item ADD craft_profit_per_day GENERATED ALWAYS AS "
+            "(craft_profit * regular_sale_velocity);"
+        )
+        self.database.execute_query(
+            "ALTER TABLE item ADD raw_profit_per_day GENERATED ALWAYS AS "
+            "(ave_cost * regular_sale_velocity);"
         )
 
     def global_db_create(self):
@@ -303,8 +311,22 @@ class FfxivDbCreation:
         state[1] = tuple(state[1].split(','))
         state[2] = tuple(state[2].split(','))
         state[3] = tuple(state[3].split(','))
-        print(state)
         return state
+
+    def add_gatherable(self):
+        """
+        Marks gatherable items in item table
+        """
+        gatherable_id_data = self.get_data_from_url("https://raw.githubusercontent.com"
+                                                    "/xivapi/ffxiv-datamining/master/csv/"
+                                                    "GatheringItem.csv")
+        gatherable_items = []
+        for item in gatherable_id_data[3:]:
+            item_data = item.split(",")
+            if item_data[3] == "True":
+                gatherable_items.append(tuple((item_data[1],)))
+        self.database.execute_query_many(
+            "UPDATE item SET gatherable = 'True' WHERE item_num = ?", gatherable_items)
 
     # function used to convert original files into the DB
     def csv_to_db(self, csv_data, table_name):

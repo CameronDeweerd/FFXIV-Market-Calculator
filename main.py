@@ -43,12 +43,12 @@ def get_sale_nums(item_number, location):
             Global database to store shared values
     """
     sales_dict = {
-        "regular_sale_velocity": None,
-        "nq_sale_velocity": None,
-        "hq_sale_velocity": None,
-        "ave_nq_cost": None,
-        "ave_hq_cost": None,
-        "ave_cost": None
+        "regular_sale_velocity": 0,
+        "nq_sale_velocity": 0,
+        "hq_sale_velocity": 0,
+        "ave_nq_cost": 0,
+        "ave_hq_cost": 0,
+        "ave_cost": 0
     }
 
     data, request_response = get_sale_data(item_number, location)
@@ -68,7 +68,7 @@ def get_sale_nums(item_number, location):
         sales_dict["regular_sale_velocity"] = round(data["regularSaleVelocity"], 1)
         sales_dict["nq_sale_velocity"] = round(data["nqSaleVelocity"], 1)
         sales_dict["hq_sale_velocity"] = round(data["hqSaleVelocity"], 1)
-        if math.ceil(sales_dict["regular_sale_velocity"]) == 0:
+        if len(data["entries"]) == 0 and math.ceil(sales_dict["regular_sale_velocity"]) == 0:
             return sales_dict, 1
     except Exception as err:
         FFXIV_LOGGER.debug(data)
@@ -76,6 +76,7 @@ def get_sale_nums(item_number, location):
         return sales_dict, 0
 
     sales = data["entries"]
+    FFXIV_LOGGER.debug(sales_dict)
     sales_dict = sales_calculations(sales_dict, sales)
     return sales_dict, 1
 
@@ -117,19 +118,19 @@ def sales_calculations(sales_dict, sales):
     try:
         sales_dict["ave_nq_cost"] = int(total_nq_cost / total_nq_sales)
     except ZeroDivisionError:
-        sales_dict["ave_nq_cost"] = None
+        sales_dict["ave_nq_cost"] = 0
 
     try:
         sales_dict["ave_hq_cost"] = int(total_hq_cost / total_hq_sales)
     except ZeroDivisionError:
-        sales_dict["ave_hq_cost"] = None
+        sales_dict["ave_hq_cost"] = 0
 
     try:
         sales_dict["ave_cost"] = int(
             (total_nq_cost + total_hq_cost) / (total_nq_sales + total_hq_sales)
         )
     except ZeroDivisionError:
-        sales_dict["ave_cost"] = None
+        sales_dict["ave_cost"] = 0
 
     return sales_dict
 
@@ -149,7 +150,6 @@ def get_sale_data(item_number, location, entries=5000):
     request_response = requests.get(
         f'https://universalis.app/api/v2/history/{location}/{item_number}'
         f'?entriesToReturn={entries}'
-        f'&statsWithin=14'
     )
     try:
         data = json.loads(request_response.content.decode('utf-8'))
@@ -230,6 +230,8 @@ def update_ingredient_costs(location_db):
                     ave_cost = 9999999
                 if ave_cost == "None":
                     ave_cost = 9999999
+                elif ave_cost <= 0:
+                    ave_cost = 9999999
             else:
                 ave_cost = 0
             update_list.append(tuple((ave_cost, num[0])))
@@ -283,7 +285,8 @@ def update(location_db, location, start_id, update_quantity):
     print("Cost to Craft Updated")
 
 
-def profit_table(location_db, location, result_quantity, velocity=10, no_craft=False):
+# def profit_table(location_db, location, result_quantity, extra_tables, velocity=10):
+def profit_table(location_db, location, main_config):
     """
     Print the profit tables to the console.
 
@@ -292,104 +295,108 @@ def profit_table(location_db, location, result_quantity, velocity=10, no_craft=F
             Database object for performing SQL queries
         location : str
             World/DC Location to pull
-        result_quantity : int
-            How many results to print in the output table
-        velocity : int
-            Minimum sales per day to display
-        no_craft : bool
-            Whether to also display most profitable without crafting costs
+        main_config : dict
+            Main configuration values
     """
     print("\n\n")
     message_data = MessageBuilder(logging_config)
-    message_data.sql_dict["limit"] = result_quantity
-    message_data.no_craft = no_craft
-    message_data.message_data_builder(location_db, velocity)
+    message_data.sql_dict["limit"] = main_config["result_quantity"]
+    message_data.message_data_builder(location_db)
     message = message_data.message_builder(location)[1]
-    print(message)
-    if no_craft:
-        message_data.sql_dict["type"] = "ave_cost"
-        message_data.message_data_builder(location_db, velocity)
+    print(message.replace("```", ""))
+    if main_config["extra_tables"]["display_without_craft_cost"]:
+        message_data = MessageBuilder(logging_config)
+        message_data.sql_dict["data_type"] = "raw_profit_per_day"
+        message_data.no_craft = main_config["extra_tables"]["display_without_craft_cost"]
+        message_data.sql_dict["limit"] = main_config["result_quantity"]
+        message_data.message_data_builder(location_db)
         message = message_data.message_builder(location)[1]
-        print(message)
+        print(message.replace("```", ""))
+    if main_config["extra_tables"]["gathering_profit_table"]:
+        message_data = MessageBuilder(logging_config)
+        message_data.sql_dict["data_type"] = "raw_profit_per_day"
+        message_data.gatherable = main_config["extra_tables"]["gathering_profit_table"]
+        message_data.sql_dict["limit"] = main_config["result_quantity"]
+        message_data.message_data_builder(location_db)
+        message = message_data.message_builder(location)[1]
+        print(message.replace("```", ""))
 
 
-def discord_webhook(main_config, discord_config, location_db, location, no_craft=False):
+def discord_webhook(discord_config, location_db, location, extra_tables):
     """
     Function for sending the results to a Discord Webhook.
 
     Parameters:
-        main_config : dict
-            Main configuration values
         discord_config : dict
             Discord configuration value
         location_db : SqlManager
             Database object for performing SQL queries
         location : str
             World/DC Location to pull
-        no_craft : bool
-            Whether to also display most profitable without crafting costs
+        extra_tables : dict
+            Dictionary of bools, whether to include extra profit tables
     """
     offset = 0
     message_data_queue = []
-    if len(discord_config['message_ids']) == 0:
+    if len(discord_config['default_message_ids']) == 0:
         message_data = MessageBuilder(logging_config)
         message_data_queue.append(message_data)
-        if no_craft:
-            message_data = MessageBuilder(logging_config)
-            message_data.sql_dict["data_type"] = "ave_cost"
-            message_data.no_craft = no_craft
-            message_data_queue.append(message_data)
-    elif not no_craft:
-        for message_id in discord_config['message_ids']:
+    else:
+        offset = 0
+        for message_id in discord_config['default_message_ids']:
             message_data = MessageBuilder(logging_config)
             message_data.message_id = message_id
             message_data.sql_dict["offset"] = offset
             message_data_queue.append(message_data)
             offset += 20
-    elif no_craft:
-        if len(discord_config['message_ids']) > 1:
-            message_ids_middle = len(discord_config['message_ids']) // 2
-            for message_id in discord_config['message_ids'][:message_ids_middle]:
-                message_data = MessageBuilder(logging_config)
-                message_data.message_id = message_id
-                message_data.sql_dict["offset"] = offset
-                message_data_queue.append(message_data)
-                offset += 20
-            offset = 0
-            for message_id in discord_config['message_ids'][message_ids_middle:]:
-                message_data = MessageBuilder(logging_config)
-                message_data.message_id = message_id
-                message_data.sql_dict["type"] = "ave_cost"
-                message_data.sql_dict["offset"] = offset
-                message_data.no_craft = no_craft
-                message_data_queue.append(message_data)
-                offset += 20
 
-        elif len(discord_config['message_ids']) == 1:
+    if extra_tables["display_without_craft_cost"] and len(
+            discord_config['no_craft_message_ids']) == 0:
+        message_data = MessageBuilder(logging_config)
+        message_data.sql_dict["data_type"] = "raw_profit_per_day"
+        message_data.no_craft = extra_tables["display_without_craft_cost"]
+        message_data_queue.append(message_data)
+    elif extra_tables["display_without_craft_cost"]:
+        offset = 0
+        for message_id in discord_config['no_craft_message_ids']:
             message_data = MessageBuilder(logging_config)
-            message_data.message_id = discord_config['message_ids'][0]
+            message_data.message_id = message_id
+            message_data.sql_dict["offset"] = offset
+            message_data.sql_dict["data_type"] = "raw_profit_per_day"
+            message_data.no_craft = extra_tables["display_without_craft_cost"]
             message_data_queue.append(message_data)
+            offset += 20
 
+    if extra_tables["gathering_profit_table"] and len(
+            discord_config['gatherable_message_ids']) == 0:
+        message_data = MessageBuilder(logging_config)
+        message_data.sql_dict["data_type"] = "raw_profit_per_day"
+        message_data.gatherable = extra_tables["gathering_profit_table"]
+        message_data_queue.append(message_data)
+    elif extra_tables["gathering_profit_table"]:
+        offset = 0
+        for message_id in discord_config['gatherable_message_ids']:
             message_data = MessageBuilder(logging_config)
-            message_data.sql_dict["type"] = "ave_cost"
-            message_data.no_craft = no_craft
+            message_data.message_id = message_id
+            message_data.sql_dict["offset"] = offset
+            message_data.sql_dict["data_type"] = "raw_profit_per_day"
+            message_data.gatherable = extra_tables["gathering_profit_table"]
             message_data_queue.append(message_data)
+            offset += 20
 
     discord = DiscordHandler(logging_config)
     for message_data in message_data_queue:
-        message_data.message_data_builder(location_db, main_config['min_avg_sales_per_day'])
-        discord.discord_queue_handler(tuple((message_data.message_builder(location))
-                                            ))
+        message_data.message_data_builder(location_db)
+        discord.discord_queue_handler(tuple((message_data.message_builder(location))))
 
 
 def main():
     """Main function"""
     main_config = config.parse_main_config()
+    endless_loop = main_config["endless_loop"]
     marketboard_type = main_config["marketboard_type"]
-    result_quantity = int(main_config["result_quantity"])
     update_quantity = int(main_config["update_quantity"])
-    min_avg_sales_per_day = main_config["min_avg_sales_per_day"]
-    display_without_craft_cost = main_config["display_without_craft_cost"]
+    extra_tables = main_config["extra_tables"]
     location_switch = {
         "World": main_config["world"],
         "Datacentre": main_config["datacentre"],
@@ -426,18 +433,22 @@ def main():
             f'marketboard_type LIKE "{marketboard_type}" AND location LIKE "{location}"'
         )
 
-    profit_table(location_db, location, result_quantity, min_avg_sales_per_day)
-    if display_without_craft_cost:
-        profit_table(location_db, location, result_quantity,
-                     min_avg_sales_per_day, no_craft=display_without_craft_cost)
+    profit_table(location_db, location, main_config)
 
     discord_config = config.parse_discord_config()
     if discord_config['discord_enable']:
-        discord_webhook(main_config, discord_config, location_db,
-                        location, no_craft=display_without_craft_cost)
+        discord_webhook(discord_config, location_db,
+                        location, extra_tables)
     else:
         FFXIV_LOGGER.info('Discord Disabled in Config')
 
+    FFXIV_LOGGER.info("End of loop")
+    return endless_loop
+
 
 if __name__ == '__main__':
-    main()
+    loop = main()
+    while loop:
+        FFXIV_LOGGER.info("Sleeping 10-minutes before next loop begins")
+        time.sleep(300)
+        loop = main()
