@@ -29,7 +29,7 @@ class MessageBuilder:  # pylint: disable=too-few-public-methods
         self.message_id = 0
         self.sql_dict = {
             "data_type": "craft_profit_per_day",
-            "limit": 20,
+            "limit": 15,
             "offset": 0
         }
         self.no_craft = False

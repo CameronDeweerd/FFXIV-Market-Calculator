@@ -303,7 +303,7 @@ def profit_table(location_db, location, main_config):
     message_data.sql_dict["limit"] = main_config["result_quantity"]
     message_data.message_data_builder(location_db)
     message = message_data.message_builder(location)[1]
-    print(message)
+    print(message.replace("```", ""))
     if main_config["extra_tables"]["display_without_craft_cost"]:
         message_data = MessageBuilder(logging_config)
         message_data.sql_dict["data_type"] = "raw_profit_per_day"
@@ -311,7 +311,7 @@ def profit_table(location_db, location, main_config):
         message_data.sql_dict["limit"] = main_config["result_quantity"]
         message_data.message_data_builder(location_db)
         message = message_data.message_builder(location)[1]
-        print(message)
+        print(message.replace("```", ""))
     if main_config["extra_tables"]["gathering_profit_table"]:
         message_data = MessageBuilder(logging_config)
         message_data.sql_dict["data_type"] = "raw_profit_per_day"
@@ -319,7 +319,7 @@ def profit_table(location_db, location, main_config):
         message_data.sql_dict["limit"] = main_config["result_quantity"]
         message_data.message_data_builder(location_db)
         message = message_data.message_builder(location)[1]
-        print(message)
+        print(message.replace("```", ""))
 
 
 def discord_webhook(discord_config, location_db, location, extra_tables):
