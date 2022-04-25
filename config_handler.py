@@ -240,7 +240,6 @@ class ConfigHandler:
         type_check = all([
             isinstance(self.config["result_quantity"], int),
             isinstance(self.config["update_quantity"], int),
-            isinstance(self.config["min_avg_sales_per_day"], int),
             isinstance(self.config["extra_tables"]["display_without_craft_cost"], bool),
             isinstance(self.config["extra_tables"]["gathering_profit_table"], bool)
         ])
@@ -248,8 +247,7 @@ class ConfigHandler:
             self.config["marketboard_type"] in ["World", "Datacentre", "Datacenter"],
             self.config["datacentre"] in valid_datacentres,
             self.config["world"] in valid_worlds,
-            self.config["result_quantity"] > 0,
-            self.config["min_avg_sales_per_day"] > 0
+            self.config["result_quantity"] > 0
         ])
         if not type_check and value_check:
             self.ffxiv_logger.error(
